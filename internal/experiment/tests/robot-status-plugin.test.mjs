@@ -60,6 +60,26 @@ test('reads only the two fixed GET endpoints and projects safe fields', async t 
   assert.equal(JSON.stringify(result).includes('secret'), false)
 })
 
+test('skips the Flex extension mount that carries the gripper', async t => {
+  const url = await serverFor(t, (req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify(req.url === '/health'
+      ? { robot_model: 'OT-3 Standard' }
+      : { data: [
+          { mount: 'left', instrumentName: 'p1000_single_flex' },
+          { mount: 'extension', instrumentName: 'gripperV1.3' },
+          { mount: 'right', instrumentName: 'p1000_multi_flex' },
+        ] }))
+  })
+  const query = await routeFor(t, url)
+  const value = await query()
+  assert.equal(value.status, 'ready')
+  assert.deepEqual(value.instruments, [
+    { mount: 'left', name: 'p1000_single_flex' },
+    { mount: 'right', name: 'p1000_multi_flex' },
+  ])
+})
+
 test('reports unconfigured, invalid, and unavailable targets without details', async t => {
   const missing = await routeFor(t, undefined)
   assert.deepEqual({ ...(await missing()), queriedAt: undefined }, { status: 'not_configured', queriedAt: undefined, health: null, instruments: null })

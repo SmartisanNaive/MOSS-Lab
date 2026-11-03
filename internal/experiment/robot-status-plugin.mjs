@@ -25,7 +25,10 @@ function instrumentsResult(payload, secrets) {
   if (!Array.isArray(data)) return null
   const result = []
   for (const item of data) {
-    if (!object(item) || !['left', 'right'].includes(item.mount)) return null
+    if (!object(item)) return null
+    // Flex reports the gripper on the extension mount, which carries no pipette.
+    if (item.mount === 'extension') continue
+    if (!['left', 'right'].includes(item.mount)) return null
     result.push({ mount: item.mount, name: safeText(item.instrumentName ?? item.name ?? item.model ?? item.instrumentModel, secrets) })
   }
   return result
