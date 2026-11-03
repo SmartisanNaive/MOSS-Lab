@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mossPythonEnvironment } from './moss-python-env.mjs'
 
@@ -27,6 +27,20 @@ test('web child Python and uv use the project environment', () => {
         assert.match(version, /^\d+\./)
       }
     }
+  } finally { rmSync(otherProject, { recursive: true, force: true }) }
+})
+
+test('selects the interpreter layout of the host platform', () => {
+  const windows = process.platform === 'win32'
+  const bin = join('labscriptai-ot', '.venv', windows ? 'Scripts' : 'bin')
+  const otherProject = mkdtempSync(join(tmpdir(), 'moss-venv-layout-'))
+  try {
+    mkdirSync(join(otherProject, bin), { recursive: true })
+    const python = join(otherProject, bin, windows ? 'python.exe' : 'python')
+    writeFileSync(python, '')
+    const env = mossPythonEnvironment(otherProject, { PATH: '/usr/bin' })
+    assert.equal(env.MOSS_PYTHON, python)
+    assert.equal(env.PATH, [join(otherProject, bin), '/usr/bin'].join(delimiter))
   } finally { rmSync(otherProject, { recursive: true, force: true }) }
 })
 
