@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write README.md
+/moss-lab:
+  en: 93796b8ac633ea4b
+  zh: f3da4f36576a1d31
+/moss-lab/features:
+  en: b92e9e93b538f45b
+  zh: 33f0a496e7744a0e
+/moss-lab/system-architecture:
+  en: e4e77776463278cc
+  zh: fd6e57c5fae2b169
+/moss-lab/system-architecture/workflow-lifecycle:
+  en: 9c586ba027172981
+  zh: d4307500a86bcbc9
+/moss-lab/requirements:
+  en: 51053779c0dc8d06
+  zh: 34454bafc2c4f15d
+/moss-lab/getting-started:
+  en: 6759dad4fb0f7bc4
+  zh: 3cbaef5682c80819
+/moss-lab/configuration:
+  en: ab6ca53ee35b3a56
+  zh: 8fa4825e67468def
+/moss-lab/project-layout:
+  en: 559182f6344c3d35
+  zh: cfc3d58a8c49ff12
+/moss-lab/sources-and-citation:
+  en: 3b1be07596e8d23c
+  zh: 0374b816beac022f
+/moss-lab/license:
+  en: 334b7145374c6cab
+  zh: fef8c9f2ae850c0c

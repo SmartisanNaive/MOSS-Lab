@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "labscriptai-ot-marketplace",
+  "owner": {
+    "name": "gaoyuan",
+    "email": "gaoyuanbio@qq.com"
+  },
+  "plugins": [
+    {
+      "name": "labscriptai-ot",
+      "description": "Opentrons simulation-first authoring and safe MCP runtime.",
+      "version": "0.1.2",
+      "author": {
+        "name": "gaoyuan",
+        "email": "gaoyuanbio@qq.com"
+      },
+      "source": "./",
+      "category": "development",
+      "strict": false
+    }
+  ],
+  "metadata": {
+    "description": "LabscriptAI OT plugin marketplace entry."
+  }
+}

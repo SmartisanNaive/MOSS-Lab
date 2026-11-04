@@ -1,0 +1,7 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write internal/xiaozhi/README.md
+/xiaozhi-mcp-bridge:
+  en: eceae3ea184219f3
+  zh: c53931954596586e

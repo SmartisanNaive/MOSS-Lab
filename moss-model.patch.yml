@@ -1,0 +1,132 @@
+- insert:
+    - id: experiment-store
+      name: ./internal/experiment/plugin.mjs
+      config:
+        path: !!js process.env.MOSS_EXPERIMENT_DB
+        create: false
+    - id: experiment-preview
+      name: ./internal/experiment/preview-plugin.mjs
+      config:
+        flexRoot: !!js process.env.MOSS_FLEX_ROOT
+        python: !!js process.env.MOSS_PYTHON
+        temporaryRoot: !!js process.env.MOSS_PREVIEW_TMP
+        timeoutMs: 60000
+    - id: robot-status
+      name: ./internal/experiment/robot-status-plugin.mjs
+      config:
+        timeoutMs: 3000
+        maxBytes: 262144
+    - id: protocol-analyzer
+      name: ./internal/experiment/analyzer-plugin.mjs
+      config:
+        temporaryRoot: !!js process.env.MOSS_PREVIEW_TMP
+        python: !!js process.env.MOSS_PYTHON
+        timeoutMs: 60000
+    - id: experiment-workflow
+      name: ./internal/experiment/workflow-plugin.mjs
+    - id: experiment-agent-tools
+      name: ./internal/experiment/agent-tools.mjs
+    - id: experiment-demo
+      name: ./internal/experiment/demo-plugin.mjs
+      config:
+        flexRoot: !!js process.env.MOSS_FLEX_ROOT
+        python: !!js process.env.MOSS_PYTHON
+        temporaryRoot: !!js process.env.MOSS_PREVIEW_TMP
+        timeoutMs: 60000
+    - id: xiaozhi-readonly
+      name: ./internal/xiaozhi/plugin.mjs
+      config:
+        sessionId: null
+        agentPreset: moss-experiment
+        bindingPath: !!js "process.env.DSH_HOME + '/xiaozhi-session.json'"
+        workspacePath: !!js process.cwd()
+        diagnosticsPath: !!js "process.env.DSH_HOME + '/xiaozhi-events.jsonl'"
+        feedback:
+          offsetsMs: [0, 15000, 45000]
+          pollWaitMs: 4000
+        transport:
+          reconnectMinMs: 1000
+          reconnectMaxMs: 30000
+          connectTimeoutMs: 10000
+          heartbeatMs: 20000
+        wakeup:
+          enabled: !!js "process.env.MOSS_AUTO_WAKE === undefined ? process.platform === 'darwin' : process.env.MOSS_AUTO_WAKE === '1'"
+          browserApp: !!js "process.env.MOSS_BROWSER_APP || 'Google Chrome'"
+          timeoutMs: 10000
+- insert:
+    - id: preset-moss-experiment
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: moss-experiment
+        name: 实验助手
+        description: 本地实验方案与三维预览
+        order: 4
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the laboratory experiment assistant. Respond briefly in the user's language.
+                You run inside the MOSS computer workbench. A message prefixed 来自小智的委派 has already arrived here from the voice device.
+                When asked whether MOSS can communicate with the computer, acknowledge receipt and explain that experiment protocol authoring and preview happen here; do not mistake this for a request to contact a second computer.
+                For a simple echo or connectivity test, respond with the requested text without tools.
+                While preparing, accept amendments immediately. The latest user requirement overrides earlier conflicting requirements; retain other confirmed conditions and the same experiment ID.
+                When essential conditions require a user response, call request_experiment_input with one concise bundled question, then wait. Do not call it for optional preferences or a simple connectivity test.
+                Use the provided create_experiment, get_experiment, update_experiment and analyze_experiment tools for local protocol previews.
+                Do not inspect or modify application code or run shell commands.
+                When essential conditions are missing, ask at most three concise grouped questions covering only facts that change this experiment; the next message continues this conversation.
+                Do not ask about unrelated modules, temperature or optional preferences. Use A1-H1 for vertical wells in column 1, and A1-A8 for horizontal wells in row A; never confuse rows and columns.
+                For an existing experiment's follow-up or parameter change, retain its experiment ID, read its current revision, update it, and analyze the returned new revision.
+                Create another experiment only when the user explicitly requests a new one.
+                Generate complete Opentrons Flex Python using protocol_api, apiLevel 2.24 or later, the confirmed equipment and well mapping.
+                Include a valid trash setup and explicit tip handling. Local simulation and animation are not physical observations or robot readiness checks.
+                Never start a real robot run. Never guess numerical experimental accuracy or real runtime from the animation.
+              complete: true
+              includeRuntimeContext: false
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+- insert:
+    - id: preset-chat
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: chat
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a helpful conversational assistant. Answer directly without using tools.
+              complete: true
+              includeRuntimeContext: false
+          - id: chat-tools
+            name: './internal/chat-tools.mjs'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+- id: llm-pi-ai
+  config:
+    providers:
+      lab-gateway:
+        displayName: LabScriptAI
+        apiKeyEnv: AI_API_KEY
+        api: openai-completions
+        baseURL: !!js "process.env.AI_API_URL.substring(0, process.env.AI_API_URL.lastIndexOf('/chat/completions'))"
+        models:
+          - id: !!js process.env.AI_MODEL
+- id: agent-default-model
+  config:
+    provider: lab-gateway
+    model: !!js process.env.AI_MODEL

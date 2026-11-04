@@ -1,0 +1,121 @@
+---
+name: opentrons-protocol-author
+description: Write or revise Opentrons Python protocols for OT-2 or Flex robots — deck setup, labware, pipette, runtime parameters, camera capture.
+metadata:
+  entry: assets/flex_protocol_template.py
+---
+
+# Protocol Author
+
+1. Identify target robot: `OT-2` or `Flex`. **Default Flex.**
+2. For spatial patterns, arbitrary well subsets, or unclear plate mapping:
+   run `opentrons-experiment-intent-review` first. Lock `target_wells` / tip policy.
+3. Read `references/python-protocol-patterns.md`, `references/pattern-library.md`, and (Flex) `references/liquid-classes-flex.md`.
+4. Start from **`assets/flex_protocol_template.py`** (Flex) or **`assets/protocol_template.py`** (OT-2). For common workflows, copy from **`assets/flex_template_*.py`** or **`assets/flex_liquid_classes_example.py`**. Supplementary snippets live under **`assets/archive/`** — not default starters.
+5. Keep protocol explicit: labware, instruments, mounts, slots, runtime parameters.
+6. Add the standard `dry_run_on` boolean runtime parameter unless the user
+   explicitly declines it. Default `False`. Route every tip release through one
+   helper: `return_tip()` when enabled, otherwise `drop_tip(...)`.
+7. If user asks about validation -> `opentrons-protocol-verify`.
+8. If simulation fails and goal is iterative repair -> `opentrons-simulation-repair`.
+9. If MCP tools are available, validate unfamiliar labware names before writing code, inspect labware geometry/dead volume when choosing substitutes, and estimate tip budget before finalizing a draft. This catches the most common avoidable errors early.
+10. If the user only wants validation or labware inspection, return findings directly. Do not force a full protocol draft when the task is just to check or compare options.
+
+**Finalize / report:** When outputting `design-notes.json`, calculating dead volume or tip budgets, or running the full pre-output checklist, read **`references/authoring-appendix.md`**.
+
+## Interaction Defaults
+
+- Do not wait for perfect inputs when a safe, runnable draft is already possible.
+- Ask only for choices that change robot compatibility, deck truth, module usage,
+  or safety-critical contamination assumptions.
+- If only a preference is missing, choose a documented default and note it in
+  `design-notes.json` (schema in appendix when you write it).
+- Once a runnable draft exists, the default next step is simulation.
+
+## Rules
+
+- Use `requirements = {"robotType": "...", "apiLevel": "..."}` for modern protocols.
+- `apiLevel` must appear **only** in `requirements`, never inside `metadata`.
+- Flex apiLevel must be **2.24 or higher** in bundled templates — compatible with verified liquid classes and RTP; raise toward `opentrons.protocol_api.MAX_SUPPORTED_VERSION` when your install allows. Older 2.20-only protocols may still run on robot but new drafts should not default below **2.24**.
+- Call out custom labware dependencies explicitly.
+- Declare known starting liquids and volumes with `protocol.define_liquid(...)` and `well.load_liquid(liquid, volume)` before transfers. Use separate liquid objects for independent samples; a shared liquid ID asserts shared identity and must not make different samples appear substitutable. Missing source amounts are a clarification, not permission to invent enough liquid just to pass LogicPass or 3D checks.
+- **Flex trash bin is NOT a Labware.** `load_trash_bin()` returns a `TrashBin` object,
+  not a labware with wells. You CANNOT subscript it (`trash_bin["A1"]` is invalid).
+  To dispose of liquid waste: `pipette.dispense(vol, location=trash_bin)` or
+  `pipette.blow_out(location=trash_bin)`. To drop tips: `pipette.drop_tip(trash_bin)`.
+  You CANNOT `aspirate()` from a TrashBin.
+- Give a liquid-waste reservoir its own deck slot; do not share or stack it with
+  samples, reagents or tip racks. Match the actual waste fixture: a trash bin in
+  D3 and a waste chute cannot occupy D3 together. Keep a confirmed user layout;
+  ask about an occupied waste slot instead of silently moving other labware.
+- Do not claim validated unless verify tooling ran or user provided validated result.
+- **Questions may omit essential assay steps.** Ask about missing assay-specific volumes, reagents or incubation conditions; do not invent them. Implement steps established by the user's instructions or applicable SOP and record that basis.
+- **Implement known limitations.** If your draft protocol has steps you know are
+  biologically or mechanically incomplete, go back and implement them before
+  finalizing. Document in `known_limitations` only steps that truly cannot be
+  automated (e.g., visual cell detachment inspection).
+- Prefer parameterized drafts over deferring work. For example, if a tip policy
+  is undecided but the rest of the protocol is known, draft the protocol with a
+  recommended default and make the choice easy to revise.
+- **Dry-run tip return:** use a boolean RTP named exactly `dry_run_on`, default
+  `False`. When true, every picked-up tip must be returned with
+  `pipette.return_tip()`; when false, discard normally. Implement this through a
+  shared helper rather than scattered conditionals. Dry mode is for a physically
+  dry deck with no liquids loaded. A returned tip is still considered used and
+  potentially contaminated; replace or segregate the rack before a wet run.
+- Never silently turn on `dry_run_on` for live execution. Surface the selected
+  value in the ready-state summary.
+- **Tip budget is a hard constraint.** Before finalizing, COUNT every `pick_up_tip` / `transfer` / `mix` call and verify total ≤ 96 × number_of_tip_racks. Running out of tips mid-protocol is a fatal simulation failure. If tip budget is tight: use `new_tip="once"` for same-reagent consecutive transfers (NOT for different reagents or different destination types), or add a second tip rack. Document `pick_up_tip_count` in `design-notes.json` / comments so live recovery can re-check **remaining** tips vs remaining pickups before `recover_tip_pickup`.
+- **PCR / 96-well tip math example:** 96 wells × 4 additions + 96 separate mixes = 480 tips if every operation uses a fresh tip. One 96-tip rack is insufficient. Reuse only where the contamination policy permits it, mix with the addition tip where appropriate, or add racks. An 8-channel pickup consumes 8 tips; changing channel count alone does not reduce tips per treated well. Always calculate before writing.
+- **Primary / reserve sources:** When a backup well shares liquid identity with the primary, annotate both in protocol comments and `design-notes.json` (`liquid_sources.primary` / `liquid_sources.reserve`, same `liquid_id`, minimum usable µL). Never imply wash/enzyme wells are interchangeable with assay buffer.
+- **Hold / time windows:** If a later phase must finish within a wall-clock window after an earlier phase (enzyme, activated reagent), write a parseable marker such as `max_hold_minutes: N` (protocol comment and/or `design-notes.json` `timing.max_hold_minutes`). Mark hold-tolerant pauses explicitly (`hold_tolerant: true`) so runtime resume can FIX short holds and STOP strict timeouts.
+
+## Liquid handling (prefer official APIs)
+
+**Flex — Opentrons-verified liquid classes (three):** `water`, `ethanol_80`, `glycerol_50`. Use `protocol.get_liquid_class(...)` and `pipette.transfer_with_liquid_class(...)` so submerge speed, flow rate by volume, air gaps, and delays come from the verified definitions — **do not hand-copy µL/s tables**. Requires apiLevel **≥ 2.24** (use your environment’s supported maximum, e.g. check `opentrons.protocol_api.MAX_SUPPORTED_VERSION`). See `references/liquid-classes-flex.md` and `assets/flex_liquid_classes_example.py`.
+
+**IMPORTANT:** `transfer_with_liquid_class` does NOT have `distribute`/`consolidate` variants. For one-to-many transfers with a liquid class, **loop per destination well**. Passing a list dest with a single source raises `ValueError`.
+
+**OT-2 or legacy building-block transfers:** use the `rate=` multiplier on `aspirate()` / `dispense()` (relative to that pipette’s defaults), or set `pipette.flow_rate.aspirate` / `dispense` in µL/s. See [Liquid control](https://docs.opentrons.com/python-api/building-block-commands/liquids/).
+
+**Local static check before simulate:** `uv run python skills/opentrons-protocol-verify/scripts/verify_protocol.py preflight <protocol.py>` catches invalid Flex pipette names and flags apiLevel mismatches for RTP / liquid-class features.
+
+**Flex — Liquid Presence Detection (capacitive LLD):** When source fill height is uncertain, reservoir levels are low, or recovery needs liquid confirmation, use `liquid_presence_detection=True` and `detect_liquid_presence` / `require_liquid_presence` / `measure_liquid_height`. See `references/liquid-presence-detection-flex.md` and `assets/flex_liquid_probe_example.py`. Default RTP `use_liquid_probe=False`; live MCP probing uses `liquid_source_map(action=critical_targets)` → `probe_wells` + `apply_liquid_probe_results` (opt-in). Record critical sources in `record_liquid_source_map` with `critical: true` or roles like `wash_buffer` / `enzyme`.
+
+**Per-aspirate LPD (when LPD is enabled):** Do **not** call `require_liquid_presence` only once before a loop of several aspirates/transfers from the same well. When the operator has selected LPD, guard **each** aspirate (or each `transfer_with_liquid_class` iteration). Do not add mandatory probing to a protocol with `use_liquid_probe=False` or after the operator declines it. A single pre-loop probe can pass, then later draws aspirate air with no error — runtime STOP never fires. Pattern in `references/liquid-presence-detection-flex.md`.
+
+## Pipette range (Flex default path)
+
+Choose the smallest pipette that covers the required volume range. Transfers below 10% of max volume lose accuracy.
+
+**Flex pipettes (only these are valid `load_instrument` names):**
+
+| Pipette model | Actual min | Recommended min (≥10% max) | Max volume | Use for |
+|--------------|-----------|---------------------------|-----------|---------|
+| `flex_1channel_50` / `flex_8channel_50` | 1 µL | 5 µL | 50 µL | Small-volume PCR, ELISA reagents |
+| `flex_1channel_1000` / `flex_8channel_1000` | 5 µL | 100 µL | 1000 µL | Large-volume transfers, cell culture |
+
+**IMPORTANT**: `flex_1channel_200` and `flex_8channel_200` do NOT exist. If you need a mid-range volume (20-200 µL), use `flex_1channel_50` with volume splitting, or `flex_1channel_1000` with awareness that accuracy decreases below 100 µL. **Do NOT claim the P1000 "cannot" do volumes below 100 µL** — it can transfer down to 5 µL, just with reduced accuracy. If high precision is needed below 100 µL, recommend the P50 instead.
+
+**Common operator wording trap:** If a Flex user asks for a "single-channel P300", do **not** invent a non-existent `flex_1channel_300`. State the mismatch plainly, then choose the closest real option:
+- default practical choice: `flex_1channel_1000` with `opentrons_flex_96_tiprack_200ul` for roughly 20-200 µL work
+- precision-first choice: `flex_1channel_50` when important transfers are mostly ≤50 µL
+- in `design-notes.json`, record that Flex has no native 300 µL single-channel pipette and explain the tradeoff you chose
+
+**Volume split rule:** If a single transfer exceeds the pipette max, split into multiple transfers. Example: 1500 µL with a 1000 µL pipette → 1000 µL + 500 µL.
+
+**Low-volume flag:** If any transfer volume is below 10% of the pipette's max, note it in `design-notes.json` under `key_decisions` (see appendix for schema) and suggest a smaller pipette if one is available.
+
+**OT-2 pipette names and extended tables:** `references/authoring-appendix.md`.
+
+## References (core)
+
+- Protocol patterns: `references/python-protocol-patterns.md`
+- Pattern index: `references/pattern-library.md`
+- Flex liquid classes (official): `references/liquid-classes-flex.md`
+- Finalize / checklist / design-notes / OT-2 tables: `references/authoring-appendix.md`
+- Flex template: `assets/flex_protocol_template.py`
+- Flex workflow templates: `assets/flex_template_cell_culture_passaging.py`, `assets/flex_template_pcr_setup.py`, `assets/flex_template_serial_dilution.py`
+- Flex liquid-class example: `assets/flex_liquid_classes_example.py`
+- OT-2 template: `assets/protocol_template.py`
+- Extra code snippets (not default starters): `assets/archive/README.md`

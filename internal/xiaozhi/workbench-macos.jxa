@@ -1,0 +1,39 @@
+// Executed by the trusted local wakeup service; cfg never comes from a tool argument.
+var app = Application(cfg.browserApp);
+if (!app.running()) app.launch();
+var windows = app.windows();
+var action = 'opened';
+var selectedWindow;
+var selectedTab;
+for (var w = 0; w < windows.length && !selectedTab; w++) {
+  var tabs = windows[w].tabs();
+  for (var t = 0; t < tabs.length; t++) {
+    var address = tabs[t].url();
+    if (address && address.indexOf(cfg.origin + '/') === 0) {
+      selectedWindow = windows[w];
+      selectedTab = tabs[t];
+      if (cfg.focus) {
+        if (cfg.browserApp === 'Safari') selectedWindow.currentTab = selectedTab;
+        else selectedWindow.activeTabIndex = t + 1;
+      }
+      if (cfg.authenticate) selectedTab.url = cfg.url;
+      action = cfg.focus ? 'focused' : 'existing';
+      break;
+    }
+  }
+}
+if (!selectedTab) {
+  if (cfg.browserApp === 'Safari') {
+    app.Document({ url: cfg.url }).make();
+    selectedWindow = app.windows()[0];
+  } else {
+    selectedWindow = app.Window().make();
+    selectedWindow.activeTab.url = cfg.url;
+  }
+}
+if (cfg.focus || action === 'opened') {
+  selectedWindow.minimized = false;
+  selectedWindow.index = 1;
+  app.activate();
+}
+JSON.stringify({ action: action });

@@ -1,0 +1,21 @@
+{
+  "name": "labscriptai-ot",
+  "version": "0.1.2",
+  "description": "Single-package LabscriptAI Opentrons plugin with MCP, skills, safety policy, and curated protocols.",
+  "author": {
+    "name": "gaoyuan",
+    "email": "gaoyuanbio@qq.com"
+  },
+  "homepage": "https://github.com/KRATSZ/labscriptai-ot",
+  "repository": "https://github.com/KRATSZ/labscriptai-ot",
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "opentrons",
+    "labscriptai",
+    "mcp",
+    "robotics",
+    "protocol-authoring"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.claude-plugin/mcp.json"
+}
