@@ -14,7 +14,7 @@ pnpm run build
 uv sync --project labscriptai-ot --locked
 ```
 
-将项目根目录的 `.env.example` 复制为 `.env`，填写模型和小智配置。`OPENTRONS_URL` 仅用于可选的只读状态查询。`.env` 包含凭据，不要上传。随后从项目根目录启动：
+将项目根目录的 `.env.example` 复制为 `.env`，填写模型和小智配置。`OPENTRONS_URL` 是机器人服务根地址，用于可选的只读状态查询，以及经操作员确认的协议运行；它必须是 http 或 https 地址。`.env` 包含凭据，不要上传。随后从项目根目录启动：
 
 ```sh
 node moss-start.mjs
@@ -22,7 +22,7 @@ node moss-start.mjs
 
 网页会话和实验数据库保存在项目根目录 `.dsh-local/`；该目录、`.env`、Python 虚拟环境和 Node 依赖都不应上传。若从旧布局迁移，请先停止旧网页服务，保留原始数据，再将原外层目录的 `.dsh-local/` 复制到本项目根目录。不要覆盖已有的数据目录。原外层 `.env` 中的配置也需要迁移到本项目根目录的 `.env`；请安全处理凭据。
 
-本地模拟和动画不证明设备就绪或实验安全。机器人状态查询不会执行设备动作；机器人连接需要可访问且兼容的服务。
+本地模拟和动画不证明设备就绪或实验安全。机器人状态查询不会执行设备动作；真机运行只在实验助手的受控工具中提供：只有在当前实验修订与协议哈希的最新分析通过后才会启动运行，启动、暂停和恢复还须操作员在网页中确认，停止始终可用。操作员应留在机器人旁。机器人连接需要可访问且兼容的服务。
 
 ## English
 
@@ -36,7 +36,7 @@ pnpm run build
 uv sync --project labscriptai-ot --locked
 ```
 
-Copy `.env.example` in the project root to `.env` and fill in the model and Xiaozhi configuration. `OPENTRONS_URL` is optional and used for read-only status queries. Keep `.env` private. Start from the project root:
+Copy `.env.example` in the project root to `.env` and fill in the model and Xiaozhi configuration. `OPENTRONS_URL` is the robot service base URL, used for optional read-only status queries and for operator-confirmed protocol runs; it must be an http or https URL. Keep `.env` private. Start from the project root:
 
 ```sh
 node moss-start.mjs
@@ -44,7 +44,7 @@ node moss-start.mjs
 
 Web sessions and the experiment database are stored in `.dsh-local/` at the project root. Do not upload that directory, `.env`, the Python environment, or Node dependencies. To migrate from the previous layout, stop the old web service, preserve the original data, then copy the old outer directory's `.dsh-local/` into this project root. Do not overwrite an existing data directory. Migrate the old outer `.env` configuration to this project root as well, handling credentials securely.
 
-Local simulation and animation do not establish device readiness or experimental safety. Status queries do not move the robot; a reachable compatible service is required.
+Local simulation and animation do not establish device readiness or experimental safety. Status queries do not move the robot. Live runs are available only through the experiment assistant's gated tools: a run starts only after the latest analysis of the current experiment revision and protocol hash passed, starting, pausing, and resuming also require the operator's confirmation in the Web UI, and stop is always available. The operator should stay at the robot. A reachable compatible service is required.
 
 ## License and citation / 许可和引用
 

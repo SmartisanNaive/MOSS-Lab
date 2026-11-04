@@ -29,12 +29,21 @@ if (!existsSync(experimentDb)) {
   store.close()
 }
 const originalPatch = readFileSync(resolve(root, 'moss-model.patch.yml'), 'utf8')
-const chatName = "name: './internal/chat-tools.mjs'"
-if (!originalPatch.includes(chatName)) throw new Error('moss-model.patch.yml 缺少 chat 工具插件配置')
+const presetPlugins = [
+  ['./internal/chat-tools.mjs', 'chat 工具'],
+  ['./internal/experiment/robot-tools.mjs', '真机工具'],
+]
+for (const [name, label] of presetPlugins) {
+  if (!originalPatch.includes(`name: '${name}'`)) throw new Error(`moss-model.patch.yml 缺少 ${label} 插件配置`)
+}
 const patchPath = resolve(root, `.moss-model-${randomUUID()}.patch.yml`)
 const cleanup = () => rmSync(patchPath, { force: true })
-const chatUrl = pathToFileURL(resolve(root, 'internal/chat-tools.mjs')).href
-writeFileSync(patchPath, originalPatch.replace(chatName, `name: ${JSON.stringify(chatUrl)}`), { mode: 0o600, flag: 'wx' })
+let patchText = originalPatch
+for (const [name] of presetPlugins) {
+  const url = pathToFileURL(resolve(root, name.replace('./', ''))).href
+  patchText = patchText.replace(`name: '${name}'`, `name: ${JSON.stringify(url)}`)
+}
+writeFileSync(patchPath, patchText, { mode: 0o600, flag: 'wx' })
 const child = spawn(process.execPath, [
   '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web',
   '--patch', patchPath, ...process.argv.slice(2),

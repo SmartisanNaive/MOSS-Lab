@@ -51,7 +51,7 @@ test('reads only the two fixed GET endpoints and projects safe fields', async t 
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify(req.url === '/health'
       ? { robot_model: 'OT-3 Standard', status: 'ok', robot_serial: 'secret' }
-      : { data: [{ mount: 'left', instrumentName: 'flex_1channel_1000', serialNumber: 'secret' }] }))
+      : { data: [{ mount: 'left', instrumentName: 'flex_1channel_1000', serialNumber: 'secret' }, { mount: 'extension', instrumentName: 'gripperV1.3' }] }))
   })
   const query = await routeFor(t, `${url}/ignored?secret=token`)
   const result = await query()

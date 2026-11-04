@@ -1,3 +1,10 @@
+import { Agent as HttpAgent, request as httpRequest } from 'node:http'
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https'
+
+// Reuse TLS connections; the tunnel resets idle ones, and retries cover that.
+const httpAgent = new HttpAgent({ keepAlive: true, maxSockets: 4 })
+const httpsAgent = new HttpsAgent({ keepAlive: true, maxSockets: 4 })
+
 export const name = 'robot-status'
 export const inject = ['connection']
 
@@ -25,36 +32,60 @@ function instrumentsResult(payload, secrets) {
   if (!Array.isArray(data)) return null
   const result = []
   for (const item of data) {
-    if (!object(item) || !['left', 'right'].includes(item.mount)) return null
+    if (!object(item)) return null
+    // Flex also lists the gripper with mount "extension"; this route reports pipettes only.
+    if (item.mount !== 'left' && item.mount !== 'right') continue
     result.push({ mount: item.mount, name: safeText(item.instrumentName ?? item.name ?? item.model ?? item.instrumentModel, secrets) })
   }
   return result
 }
 
-async function readJson(url, headers, timeoutMs, maxBytes) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetch(url, { method: 'GET', headers, redirect: 'error', signal: controller.signal })
-    if (!response.ok || !response.body) return null
-    const reader = response.body.getReader()
-    const chunks = []
-    let size = 0
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > maxBytes) return null
-      chunks.push(value)
+function readJson(url, headers, timeoutMs, maxBytes) {
+  // The tunneled robot resets fetch/undici connections and ignores redirects, so use the
+  // Node HTTP transport with explicit bounds. Failures return null without the target.
+  return new Promise(resolve => {
+    const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
+    let settled = false
+    const finish = value => {
+      if (settled) return
+      settled = true
+      resolve(value)
     }
-    return JSON.parse(Buffer.concat(chunks, size).toString('utf8'))
-  } catch (error) {
-    // Upstream errors may contain the configured address or credentials.
-    return null
-  } finally {
-    controller.abort()
-    clearTimeout(timer)
-  }
+    let request
+    try {
+      request = transport(url, { method: 'GET', headers, agent: url.protocol === 'https:' ? httpsAgent : httpAgent }, response => {
+        const chunks = []
+        let size = 0
+        response.on('data', chunk => {
+          size += chunk.length
+          if (size > maxBytes) {
+            finish(null)
+            request.destroy()
+            return
+          }
+          chunks.push(chunk)
+        })
+        response.on('end', () => {
+          if (settled) return
+          if (response.statusCode < 200 || response.statusCode >= 300) return finish(null)
+          try {
+            finish(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+          } catch {
+            finish(null)
+          }
+        })
+      })
+    } catch {
+      finish(null)
+      return
+    }
+    request.setTimeout(timeoutMs, () => {
+      finish(null)
+      request.destroy()
+    })
+    request.on('error', () => finish(null))
+    request.end()
+  })
 }
 
 /**
@@ -70,7 +101,7 @@ export function apply(ctx, config) {
   const configuredUrl = process.env.OPENTRONS_URL
   const configured = typeof configuredUrl === 'string' && configuredUrl.trim() !== ''
   let target = null
-  const headers = { 'Opentrons-Version': '4', Accept: 'application/json' }
+  const headers = { 'Opentrons-Version': '4', Accept: 'application/json', 'User-Agent': 'MOSS-Lab/0.1' }
   const secrets = []
   if (configured) {
     try {
@@ -94,12 +125,17 @@ export function apply(ctx, config) {
       let health = null
       let instruments = null
       if (target) {
-        const [healthPayload, instrumentsPayload] = await Promise.all([
-          readJson(new URL('/health', target), headers, config.timeoutMs, config.maxBytes),
-          readJson(new URL('/instruments', target), headers, config.timeoutMs, config.maxBytes),
-        ])
-        health = healthResult(healthPayload, secrets)
-        instruments = instrumentsResult(instrumentsPayload, secrets)
+        // The tunneled robot resets concurrent or idle reads, so query sequentially and retry once.
+        const read = async resource => {
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const payload = await readJson(new URL(resource, target), headers, config.timeoutMs, config.maxBytes)
+            if (payload !== null) return payload
+            await new Promise(resolve => setTimeout(resolve, 150))
+          }
+          return null
+        }
+        health = healthResult(await read('/health'), secrets)
+        instruments = instrumentsResult(await read('/instruments'), secrets)
       }
       const status = !configured ? 'not_configured' : health && instruments ? 'ready' : health || instruments ? 'partial' : 'unreachable'
       return Response.json({ status, queriedAt, health, instruments }, { headers: { 'Cache-Control': 'private, no-store' } })

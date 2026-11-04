@@ -8,7 +8,7 @@
 
 MOSS Lab 将网页 AI 智能体、本地 Opentrons 移液协议仿真与交互式 Flex 3D 关键帧可视化整合为一个统一平台。项目基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 架构，并融合了来自 [LabscriptAI OT](https://github.com/KRATSZ/labscriptai-ot) 的机器人自动化与物理仿真资产，使科研人员能够借助确定性的本地安全隔离机制与实时物理空间反馈，高效开展移液自动化实验。
 
-> **项目状态：** 实验阶段。本地模拟与关键帧动画仅提供空间逻辑验证，不能证明湿实验生物学准确性、物理机器就绪或操作安全。机器人状态监控模块仅工作在只读遥测模式下，绝不会主动触发实体硬件机械动作。
+> **项目状态：** 实验阶段。本地模拟与关键帧动画仅提供空间逻辑验证，不能证明湿实验生物学准确性、物理机器就绪或操作安全。真机控制以受控方式提供：只有在当前实验修订通过本地协议分析、且操作员在网页中确认后，才会启动运行。这些检查不能证明物理安全，也不能替代现场判断。
 
 ## 核心特性
 
@@ -16,7 +16,8 @@ MOSS Lab 将网页 AI 智能体、本地 Opentrons 移液协议仿真与交互�
 - **零硬件门槛仿真关卡**：通过 `opentrons.cli analyze --check` 在本地环境中对生成的 Python 协议进行严格静态语法与几何冲突检查，在接触实体硬件前提前拦截移液量超限、板位干涉等隐患。
 - **Flex 3D 交互式可视化**：利用 MuJoCo 物理引擎精确计算吸液、排液和移液臂运动轨迹，并在隔离的 Three.js 网页沙箱中提供沉浸式三维漫游与单步关键帧预览。
 - **小智 AI 硬件跨端委派**：支持通过安全的外部 WSS 通道连接小智 MCP 智能硬件，实现语音/移动端随时委派实验任务并实时追踪进度，凭据严格保密。
-- **只读机器人遥测探测**：轻量级集成无副作用的只读状态查询（`GET /health` 与 `GET /instruments`），安全探测现场设备就绪状态。
+- **只读机器人遥测**：轻量级集成无副作用的只读状态查询（`GET /health` 与 `GET /instruments`），在不移动机器人的前提下探测设备可用性。
+- **受控真机运行**：实验助手可通过 Opentrons HTTP 接口上传已检查的协议、创建运行，并播放、暂停、恢复或停止。只有当前实验修订与协议哈希的最新分析通过后才会启动运行；启动、暂停和恢复还须操作员在网页中确认。停止始终可用。操作员必须留在机器人旁。
 
 ![MOSS Lab Software Console](docs/images/moss-lab-console.png)
 
@@ -28,7 +29,7 @@ MOSS Lab 将生物实验自动化解耦为四个健壮层级：用户交互层�
 
 ### 执行工作流程
 
-端到端执行流水线确保任何未经本地仿真验证的协议都不会进入实体运行阶段：
+端到端执行流水线在本地验证与显式操作员确认之后才允许实体执行：
 
 ```mermaid
 graph TD
@@ -48,7 +49,9 @@ graph TD
 
     subgraph Execution ["🔬 Optional Live Environment"]
         Operator -->|Telemetry Query| RobotProbe["🔍 Read-only Probe (/health, /instruments)"]
+        Operator -->|Approval for a checked revision| RobotControl["🎛️ Gated Run Control (start, pause, resume, stop)"]
         RobotProbe --> Robot["🤖 Opentrons Flex / OT-2 Device"]
+        RobotControl --> Robot
     end
 ```
 
@@ -57,7 +60,7 @@ graph TD
 - Node.js 24.9 或更高版本，配合 pnpm 11.28.5。
 - [uv](https://docs.astral.sh/uv/) 包管理工具及 Python 3.11–3.13 运行环境。
 - 兼容 OpenAI Chat Completions 的 HTTPS 模型服务地址与凭据。
-- 小智 MCP 硬件委派所必需的 WSS 接入地址；可选配置 Opentrons 设备 HTTP 地址。
+- 小智 MCP 硬件委派所必需的 WSS 接入地址；可选配置 Opentrons 设备 HTTP 地址，用于状态查询和经操作员确认的协议运行。
 
 ## 快速开始
 
@@ -90,13 +93,14 @@ node moss-start.mjs
 | `XIAOZHI_WSS_URL` | 选填 | 用于小智硬件 MCP 双向通信的私有 WebSocket 地址 | `wss://api.example.com/mcp?token=xxx` |
 | `MOSS_AUTO_WAKE` | 选填 | 首次打开、追问或当前预览完成时置前工作台；macOS 默认 `1`，设 `0` 关闭 | `1` |
 | `MOSS_BROWSER_APP` | 选填 | macOS 复用工作台的浏览器：Google Chrome、Microsoft Edge 或 Safari | `Google Chrome` |
-| `OPENTRONS_URL` | 选填 | 局域网内 Opentrons 机器人的服务基础地址 | `http://192.168.1.100:31950` |
+| `OPENTRONS_URL` | 选填 | 机器人服务根地址，用于状态查询和经操作员确认的协议运行；必须是 `http` 或 `https` 地址 | `https://robot.example.com` |
+| `MOSS_ALLOW_LIVE_ROBOT` | 选填 | 设为 `0` 可禁止所有真机动作，只保留状态查询 | `1` |
 
 ## 项目结构
 
 - `moss-start.mjs` 与 `moss-model.patch.yml`：负责配置并启动 Cordis 网页智能体框架。
-- `internal/`：存放实验存储库、重启恢复引擎、只读机器人遥测与小智 MCP 桥接插件。
-- `labscriptai-ot/`：收拢移液协议技能库、本地模拟环境依赖与 Flex3D MuJoCo 资产。
+- `internal/`：存放实验存储库、重启恢复引擎、受控真机运行与小智 MCP 桥接插件。
+- `labscriptai-ot/`：收拢移液协议技能库、本地模拟环境依赖、Flex3D MuJoCo 资产，以及真机控制使用的机器人 HTTP 辅助代码。
 - `packages/`、`apps/` 与 `vendor/`：DeepSeek Harness 核心插件基础设施与前端 Web 客户端。
 
 ## 来源与引用

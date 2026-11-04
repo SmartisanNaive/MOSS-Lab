@@ -57,3 +57,7 @@ native/system/test/bin/
 
 # Local agent progress and verification evidence
 .agent-runs/
+
+# Vendored Opentrons MCP runtime helpers pinned to the labscriptai-ot snapshot
+!labscriptai-ot/servers/opentrons-mcp/lib/
+!labscriptai-ot/servers/opentrons-mcp/lib/**

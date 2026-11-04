@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 MOSS Lab brings a web-based AI agent, local Opentrons liquid-handling protocol simulation, and interactive Flex 3D keyframe visualization together into a unified platform. Built upon [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and incorporating simulation assets from [LabscriptAI OT](https://github.com/KRATSZ/labscriptai-ot), MOSS Lab enables researchers to automate liquid-handling experimentation with deterministic safety isolation and real-time spatial physics feedback.
 
-> **Project status:** Experimental. Local simulation and keyframe animations provide spatial validation, but do not establish wet-lab biological accuracy, machine readiness, or physical safety. The robot status monitor operates strictly in read-only telemetry mode and never triggers mechanical operations.
+> **Project status:** Experimental. Local simulation and keyframe animations provide spatial validation, but do not establish wet-lab biological accuracy, machine readiness, or physical safety. Live robot control is available in a gated mode: a run starts only after local protocol analysis passes for the current experiment revision and the operator confirms in the Web UI. These checks do not establish physical safety or replace on-site judgement.
 
 ## Features
 
@@ -16,7 +16,8 @@ MOSS Lab brings a web-based AI agent, local Opentrons liquid-handling protocol s
 - **Zero-Hardware Simulation Gate**: Verify Python protocol scripts locally with `opentrons.cli analyze --check` to catch out-of-bounds pipetting, deck collision, and parameter errors before hardware commitment.
 - **Interactive Flex 3D Visualization**: Real-time rendering of Deck, Labware, and Pipette kinematics in an isolated Three.js web sandbox, driven by keyframes generated from MuJoCo physics models.
 - **Xiaozhi AI Hardware Delegation**: Support for remote task dispatching and query via an outbound Xiaozhi MCP WebSocket connection without exposing credentials.
-- **Read-Only Robot Telemetry**: Integrated non-intrusive status querying (`GET /health` and `GET /instruments`) to check robot availability safely.
+- **Read-Only Robot Telemetry**: Integrated non-intrusive status querying (`GET /health` and `GET /instruments`) to check robot availability without moving the robot.
+- **Gated Live Robot Control**: The experiment assistant can upload a checked protocol, create a run, and play, pause, resume, or stop it through the Opentrons HTTP API. A run starts only when the latest local analysis of the current experiment revision and protocol hash passed; starting, pausing, and resuming also require the operator's approval in the Web UI. Stop is always available. The operator must be at the robot.
 
 ![MOSS Lab Software Console](docs/images/moss-lab-console.png)
 
@@ -28,7 +29,7 @@ MOSS Lab decomposes biological automation into four resilient layers: User Inter
 
 ### Workflow Lifecycle
 
-The end-to-end execution pipeline ensures that no protocol reaches physical execution without deterministic local verification:
+The end-to-end execution pipeline keeps physical execution behind local verification and an explicit operator approval:
 
 ```mermaid
 graph TD
@@ -48,7 +49,9 @@ graph TD
 
     subgraph Execution ["🔬 Optional Live Environment"]
         Operator -->|Telemetry Query| RobotProbe["🔍 Read-only Probe (/health, /instruments)"]
+        Operator -->|Approval for a checked revision| RobotControl["🎛️ Gated Run Control (start, pause, resume, stop)"]
         RobotProbe --> Robot["🤖 Opentrons Flex / OT-2 Device"]
+        RobotControl --> Robot
     end
 ```
 
@@ -57,7 +60,7 @@ graph TD
 - Node.js 24.9 or later, with pnpm 11.28.5.
 - [uv](https://docs.astral.sh/uv/) packaging tool and Python 3.11–3.13.
 - An OpenAI Chat Completions-compatible HTTPS model service and credentials.
-- A Xiaozhi MCP WSS endpoint for hardware delegation; an Opentrons HTTP endpoint is optional.
+- A Xiaozhi MCP WSS endpoint for hardware delegation; an Opentrons HTTP endpoint is optional and enables status queries and operator-confirmed protocol runs.
 
 ## Getting Started
 
@@ -90,13 +93,14 @@ The runtime reads its configuration from the root `.env` file:
 | `XIAOZHI_WSS_URL` | Optional | Private WebSocket URL for Xiaozhi MCP communication | `wss://api.example.com/mcp?token=xxx` |
 | `MOSS_AUTO_WAKE` | Optional | Focus on first opening, clarification or current preview completion; macOS default is `1`, `0` disables it | `1` |
 | `MOSS_BROWSER_APP` | Optional | macOS browser for workbench reuse; Google Chrome, Microsoft Edge or Safari | `Google Chrome` |
-| `OPENTRONS_URL` | Optional | Address of the target Opentrons robot server | `http://192.168.1.100:31950` |
+| `OPENTRONS_URL` | Optional | Robot base URL used for status queries and operator-confirmed protocol runs; must be an `http` or `https` URL | `https://robot.example.com` |
+| `MOSS_ALLOW_LIVE_ROBOT` | Optional | Set `0` to disable all physical robot actions while keeping status queries | `1` |
 
 ## Project Layout
 
 - `moss-start.mjs` and `moss-model.patch.yml` configure and launch the Cordis web agent.
-- `internal/` houses the experiment store, preview recovery engine, robot telemetry, and Xiaozhi bridge.
-- `labscriptai-ot/` contains protocol automation skills, simulation runtime, and Flex3D MuJoCo assets.
+- `internal/` houses the experiment store, preview recovery engine, gated robot control, and Xiaozhi bridge.
+- `labscriptai-ot/` contains protocol automation skills, simulation runtime, Flex3D MuJoCo assets, and the vendored robot HTTP helpers used for live control.
 - `packages/`, `apps/`, and `vendor/` provide the core DeepSeek Harness architecture and web client.
 
 ## Sources and Citation

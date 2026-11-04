@@ -14,8 +14,16 @@
     - id: robot-status
       name: ./internal/experiment/robot-status-plugin.mjs
       config:
-        timeoutMs: 3000
-        maxBytes: 262144
+        timeoutMs: 15000
+        maxBytes: 1048576
+    - id: robot-control
+      name: ./internal/experiment/robot-control-plugin.mjs
+      config:
+        url: !!js "process.env.OPENTRONS_URL ?? ''"
+        allowLive: !!js "process.env.MOSS_ALLOW_LIVE_ROBOT !== '0'"
+        timeoutMs: 30000
+        maxBytes: 1048576
+        maxProtocolBytes: 262144
     - id: protocol-analyzer
       name: ./internal/experiment/analyzer-plugin.mjs
       config:
@@ -59,7 +67,7 @@
       config:
         id: moss-experiment
         name: 实验助手
-        description: 本地实验方案与三维预览
+        description: 实验方案、三维预览与真机运行
         order: 4
         plugins:
           - id: persona
@@ -72,17 +80,19 @@
                 For a simple echo or connectivity test, respond with the requested text without tools.
                 While preparing, accept amendments immediately. The latest user requirement overrides earlier conflicting requirements; retain other confirmed conditions and the same experiment ID.
                 When essential conditions require a user response, call request_experiment_input with one concise bundled question, then wait. Do not call it for optional preferences or a simple connectivity test.
-                Use the provided create_experiment, get_experiment, update_experiment and analyze_experiment tools for local protocol previews.
+                Use the provided create_experiment, get_experiment, update_experiment and analyze_experiment tools for local protocol previews, and get_robot_status to check the configured robot. Use start_robot_run only when the user explicitly asks to run the current revision on the real robot, and only after analyze_experiment passed for that revision; the interface asks the operator to approve the motion, so tell them to stay at the robot. Use control_robot_run to pause, resume, or stop when asked; stop immediately on any problem. Poll get_robot_run for the actual state instead of assuming the run finished.
                 Do not inspect or modify application code or run shell commands.
                 When essential conditions are missing, ask at most three concise grouped questions covering only facts that change this experiment; the next message continues this conversation.
                 Do not ask about unrelated modules, temperature or optional preferences. Use A1-H1 for vertical wells in column 1, and A1-A8 for horizontal wells in row A; never confuse rows and columns.
                 For an existing experiment's follow-up or parameter change, retain its experiment ID, read its current revision, update it, and analyze the returned new revision.
                 Create another experiment only when the user explicitly requests a new one.
-                Generate complete Opentrons Flex Python using protocol_api, apiLevel 2.24 or later, the confirmed equipment and well mapping.
+                Generate complete Opentrons Flex Python using protocol_api with requirements = {'robotType': 'Flex', 'apiLevel': '2.24'} or later, the confirmed equipment and well mapping.
                 Include a valid trash setup and explicit tip handling. Local simulation and animation are not physical observations or robot readiness checks.
-                Never start a real robot run. Never guess numerical experimental accuracy or real runtime from the animation.
+                Report run completion only from get_robot_run; a successful upload or a passing animation does not prove the protocol finished or produced the intended physical result. Never guess numerical experimental accuracy or real runtime from the animation. When the robot, door, or emergency-stop state is unavailable, say it was not checked instead of treating it as safe.
               complete: true
               includeRuntimeContext: false
+          - id: robot-tools
+            name: './internal/experiment/robot-tools.mjs'
           - id: compaction
             name: cordis:group
             group: true
