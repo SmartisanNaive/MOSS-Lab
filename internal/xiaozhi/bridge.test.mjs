@@ -32,6 +32,26 @@ test('tool calls are restricted to an operator-selected session and omit snapsho
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('reports live-control modes without exposing the robot address', async () => {
+  const store = { getForSession() {}, getChecksForSession() {} }
+  const delegation = { submit() {} }
+  const status = async liveControl => payload(await handleMessage(
+    request(1, 'tools/call', { name: 'moss_status', arguments: {} }), store, 'owner', delegation, { liveControl },
+  ))
+  const absent = await status(undefined)
+  assert.equal(absent.live_control, 'unavailable')
+  assert.equal(absent.supported_tasks.includes('gated_real_robot_run'), false)
+  const disabled = await status({ configured: true, allowLive: false, address: 'http://secret-host:31950' })
+  assert.equal(disabled.live_control, 'disabled')
+  assert.equal(disabled.supported_tasks.includes('gated_real_robot_run'), false)
+  assert.equal(JSON.stringify(disabled).includes('secret-host'), false)
+  const ready = await status({ configured: true, allowLive: true, address: 'http://secret-host:31950' })
+  assert.equal(ready.live_control, 'approval_required')
+  assert.ok(ready.supported_tasks.includes('gated_real_robot_run'))
+  assert.match(ready.note, /网页/)
+  assert.equal(JSON.stringify(ready).includes('secret-host'), false)
+})
+
 test('outbound socket sends only replies and is closed on disposal', async () => {
   class FakeSocket extends EventTarget {
     static last

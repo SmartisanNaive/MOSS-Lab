@@ -71,7 +71,12 @@ export function apply(ctx, config) {
     let reportedConnectionStatus
     try {
       unregister = registerWorkbench(ctx.connection, workbench)
-      if (endpoint) disconnect = connectBridge({ url: endpoint, sessionId: config.sessionId, store: ctx.experimentStore, delegation: workbench, ...config.transport,
+      if (endpoint) disconnect = connectBridge({ url: endpoint, sessionId: config.sessionId, store: ctx.experimentStore, delegation: workbench,
+        liveControl: () => {
+          const control = ctx.get('robotControl')
+          return control ? { configured: control.configured, allowLive: control.allowLive } : null
+        },
+        ...config.transport,
         onState: (status, state) => {
           record({ ...state, source: 'xiaozhi-mcp' })
           if (status !== reportedConnectionStatus && ['ready', 'retrying', 'connection_error'].includes(status)) console.info('xiaozhi MCP:', status)

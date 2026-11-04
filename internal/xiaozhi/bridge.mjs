@@ -3,7 +3,7 @@ import WebSocket from 'ws'
 const tools = [
   {
     name: 'moss_status',
-    description: '查询电脑端 MOSS 实验服务及委派能力是否可用。MOSS 在电脑上生成实验协议、模拟和三维预览；不代表机器人已连接或实验可运行。',
+    description: '查询电脑端 MOSS 实验服务、委派能力和真机运行模式。live_control=approval_required 表示可让电脑端实验助手经网页确认后运行真机，语音端不能直接启动；该状态不代表机器人已就绪。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -59,7 +59,21 @@ export async function handleMessage(message, store, sessionId, delegation, conte
   if (!args || typeof args !== 'object' || Array.isArray(args)) return failure(id, -32602, 'Invalid tool arguments')
   if (name === 'moss_status') {
     if (Object.keys(args).length) return failure(id, -32602, 'Invalid tool arguments')
-    return response(id, text({ experiment_store: 'available', delegation: Boolean(delegation), supported_tasks: delegation ? ['experiment_protocol_authoring', 'local_analysis', '3d_preview', 'same_experiment_revision'] : [], device_status: 'unknown', live_control: 'unavailable', note: '这是电脑端 MOSS。可在此生成与修改实验协议并显示预览，不提供向其他电脑发消息或运行真实机器人的工具。' }))
+    let live = null
+    try { live = typeof context.liveControl === 'function' ? context.liveControl() : context.liveControl } catch { live = null }
+    const liveControl = live?.configured ? live?.allowLive ? 'approval_required' : 'disabled' : 'unavailable'
+    const supportedTasks = ['experiment_protocol_authoring', 'local_analysis', '3d_preview', 'same_experiment_revision']
+    if (delegation && liveControl === 'approval_required') supportedTasks.push('gated_real_robot_run')
+    return response(id, text({
+      experiment_store: 'available',
+      delegation: Boolean(delegation),
+      supported_tasks: delegation ? supportedTasks : [],
+      device_status: 'not_checked',
+      live_control: liveControl,
+      note: liveControl === 'approval_required'
+        ? '真机运行由电脑端实验助手执行，须协议分析通过并在网页上由现场操作员确认；语音端不能直接启动机器人，也不能代替确认。'
+        : '这是电脑端 MOSS。可在此生成与修改实验协议并显示预览；当前语音桥不能启动真机运行。',
+    }))
   }
   if (name === 'moss_delegate' || name === 'moss_task_status') {
     const key = name === 'moss_delegate' ? 'message' : 'jobId'
@@ -94,7 +108,7 @@ export async function handleMessage(message, store, sessionId, delegation, conte
  * @param {object} options Endpoint, store, delegation and configurable transport budgets.
  * @returns {Function} Async disposer with a credential-free snapshot method.
  */
-export function connectBridge({ url, sessionId, store, delegation, WebSocketClass = WebSocket, onState = () => {}, reconnectMinMs = 1000, reconnectMaxMs = 30000, connectTimeoutMs = 10000, heartbeatMs = 20000 }) {
+export function connectBridge({ url, sessionId, store, delegation, liveControl = null, WebSocketClass = WebSocket, onState = () => {}, reconnectMinMs = 1000, reconnectMaxMs = 30000, connectTimeoutMs = 10000, heartbeatMs = 20000 }) {
   if (sessionId !== null && (typeof sessionId !== 'string' || !sessionId.trim())) throw new Error('xiaozhi requires a fixed session ID or null')
   let parsed
   try { parsed = new URL(url) } catch { throw new Error('xiaozhi endpoint is invalid') }
@@ -153,7 +167,7 @@ export function connectBridge({ url, sessionId, store, delegation, WebSocketClas
             const name = message.method === 'tools/call' && tools.some(tool => tool.name === message.params?.name) ? message.params.name : null
             const receivedAt = Date.now()
             if (name !== null) notify(state.status, { lastCall: { name, status: 'received', receivedAt, source: 'xiaozhi-mcp' } })
-            try { answer = await handleMessage(message, store, sessionId, delegation, { signal: controller.signal }) }
+            try { answer = await handleMessage(message, store, sessionId, delegation, { signal: controller.signal, liveControl }) }
             catch { answer = failure(message?.id ?? null, -32603, 'Internal error') }
             if (name !== null && !disposed && socket === current && !controller.signal.aborted) notify(state.status, { lastCall: { name, status: answer?.error || answer?.result?.isError ? 'error' : 'replied', receivedAt, source: 'xiaozhi-mcp' } })
           }
