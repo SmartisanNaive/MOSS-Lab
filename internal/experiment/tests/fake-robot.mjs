@@ -19,7 +19,7 @@ export async function startFakeRobot(handler) {
       const status = result?.status ?? 200
       const payload = result?.body ?? {}
       response.writeHead(status, { 'Content-Type': 'application/json', ...(result?.headers ?? {}) })
-      response.end(typeof payload === 'string' ? payload : JSON.stringify(payload))
+      response.end(Buffer.isBuffer(payload) ? payload : typeof payload === 'string' ? payload : JSON.stringify(payload))
     })
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))

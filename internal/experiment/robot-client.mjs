@@ -99,8 +99,10 @@ function multipart(protocol, filename) {
  * @returns {object} Status, upload, run, and query operations.
  */
 export function createRobotClient(config) {
-  if (!config || typeof config.url !== 'string' || !Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0 || !Number.isSafeInteger(config.maxBytes) || config.maxBytes <= 0 || !Number.isSafeInteger(config.maxProtocolBytes) || config.maxProtocolBytes <= 0) {
-    throw new Error('robot-client requires a url, positive timeoutMs, maxBytes, and maxProtocolBytes')
+  const hasProtocolLimit = config !== null && config !== undefined && config.maxProtocolBytes !== undefined
+  if (!config || typeof config.url !== 'string' || !Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0 || !Number.isSafeInteger(config.maxBytes) || config.maxBytes <= 0
+    || hasProtocolLimit && (!Number.isSafeInteger(config.maxProtocolBytes) || config.maxProtocolBytes <= 0)) {
+    throw new Error('robot-client requires a url, positive timeoutMs and maxBytes, and a positive maxProtocolBytes when protocol uploads are used')
   }
   const parsed = new URL(config.url)
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('robot-client requires an http(s) robot URL')
@@ -142,7 +144,7 @@ export function createRobotClient(config) {
           }
           chunks.push(chunk)
         })
-        response.on('end', () => finish(resolve, { status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }))
+        response.on('end', () => finish(resolve, { status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks) }))
       })
       request.setTimeout(timeoutMs, () => {
         finish(reject, new RobotError('ROBOT_TIMEOUT', `${method} ${target.pathname} timed out`))
@@ -170,10 +172,10 @@ export function createRobotClient(config) {
     for (let attempt = 1; ; attempt += 1) {
       try {
         const response = await send(method, target, body, contentType, timeoutMs)
-        if (response.status < 200 || response.status >= 300) throw new RobotError('ROBOT_HTTP_ERROR', `${method} ${pathname} failed with HTTP ${response.status}: ${boundedText(response.text, 300)}`)
-        if (!response.text) return null
+        if (response.status < 200 || response.status >= 300) throw new RobotError('ROBOT_HTTP_ERROR', `${method} ${pathname} failed with HTTP ${response.status}: ${boundedText(response.body.toString('utf8'), 300)}`)
+        if (response.body.length === 0) return null
         try {
-          return JSON.parse(response.text)
+          return JSON.parse(response.body.toString('utf8'))
         } catch {
           throw new RobotError('ROBOT_INVALID_RESPONSE', `${method} ${pathname} returned invalid JSON`)
         }
@@ -202,6 +204,7 @@ export function createRobotClient(config) {
   }
 
   async function uploadProtocol(protocol, filename = 'protocol.py') {
+    if (!hasProtocolLimit) throw new RobotError('PROTOCOL_UPLOAD_UNSUPPORTED', 'this robot client was created without a protocol upload limit')
     if (Buffer.byteLength(protocol) > config.maxProtocolBytes) throw new RobotError('PROTOCOL_TOO_LARGE', 'protocol exceeds the configured upload limit')
     const form = multipart(protocol, filename)
     const payload = await request('POST', '/protocols', { body: form.body, contentType: `multipart/form-data; boundary=${form.boundary}` })
@@ -240,5 +243,54 @@ export function createRobotClient(config) {
     return commands
   }
 
-  return { base, headers, status: readStatus, uploadProtocol, createRun, runAction, getRun, getCommands }
+  async function cameraStatus() {
+    return request('GET', '/camera')
+  }
+
+  /**
+   * Capture one preview image from the robot's built-in deck camera.
+   * This is an observation-only POST: it takes a new photo and does not change
+   * persistent camera settings or move the robot.
+   * @param {object} settings Image settings accepted by /camera/capturePreviewImage.
+   * @returns {{ data: Buffer, contentType: string }} Encoded image bytes and media type.
+   */
+  async function capturePreviewImage(settings = {}) {
+    if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) throw new RobotError('CAMERA_SETTINGS_INVALID', 'camera image settings must be an object')
+    let target
+    try {
+      target = new URL(buildRobotUrl(base, '/camera/capturePreviewImage'))
+    } catch {
+      throw new RobotError('ROBOT_URL_INVALID', 'robot URL configuration is invalid')
+    }
+    const payload = Buffer.from(JSON.stringify({ data: settings }), 'utf8')
+    let response
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        response = await send('POST', target, payload, 'application/json', config.timeoutMs)
+        break
+      } catch (error) {
+        // The tunnel resets idle connections; a capture is observation-only, so retrying is safe.
+        if (attempt >= 2 || !(error instanceof RobotError) || error.code !== 'ROBOT_UNREACHABLE') throw error
+        await new Promise(resolve => setTimeout(resolve, 150))
+      }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const detail = response.body.toString('utf8')
+      if (response.status === 422 && /run is active/i.test(detail)) {
+        throw new RobotError('CAMERA_RUN_ACTIVE', 'the robot has an active run; finish or stop it before capturing a deck photo')
+      }
+      throw new RobotError('ROBOT_HTTP_ERROR', `POST /camera/capturePreviewImage failed with HTTP ${response.status}: ${boundedText(detail, 300)}`)
+    }
+    const contentType = String(response.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+    if (contentType !== 'image/jpeg' && contentType !== 'image/png') throw new RobotError('CAMERA_UNSUPPORTED_IMAGE', `camera returned ${contentType || 'no content type'} instead of an image`)
+    const data = response.body
+    if (data.length === 0) throw new RobotError('CAMERA_EMPTY_IMAGE', 'camera returned an empty image')
+    const signature = contentType === 'image/jpeg'
+      ? data.subarray(0, 3).toString('hex') === 'ffd8ff'
+      : data.subarray(0, 8).toString('hex') === '89504e470d0a1a0a'
+    if (!signature) throw new RobotError('CAMERA_INVALID_IMAGE', `camera returned bytes that are not ${contentType}`)
+    return { data, contentType }
+  }
+
+  return { base, headers, status: readStatus, uploadProtocol, createRun, runAction, getRun, getCommands, cameraStatus, capturePreviewImage }
 }

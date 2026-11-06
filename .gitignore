@@ -61,3 +61,6 @@ native/system/test/bin/
 # Vendored Opentrons MCP runtime helpers pinned to the labscriptai-ot snapshot
 !labscriptai-ot/servers/opentrons-mcp/lib/
 !labscriptai-ot/servers/opentrons-mcp/lib/**
+
+# Machine-local deck camera calibration and its reference photo
+labscriptai-ot/automation/photo/

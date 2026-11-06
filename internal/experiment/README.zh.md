@@ -59,6 +59,22 @@ node --import tsx/esm --test internal/experiment/tests/experiment.test.mjs inter
 
 `start_robot_run` 以及 `control_robot_run` 的暂停和恢复操作需要操作员在网页中确认；停止从不需要。这些检查不证明物理安全或生物学准确性，无法读取的舱门或急停状态不会得到检查。操作员必须留在机器人旁，运行完成情况与物理结果只能来自 `get_robot_run`。
 
+## 台面视觉
+
+`vision-plugin.mjs` 主机插件在加载时读取 `OPENTRONS_URL` 作为固定的摄像头目标，只接受 http 或 https 地址；留空时拍照不可用，但服务仍然挂载。它提供 `experimentVision` 服务（`capture` 和 `inspect`）以及需要认证的 `/api/robot-camera` 路由。`capture` 用 `GET /camera` 读取相机状态，用 `POST /camera/capturePreviewImage` 拍一张照片，并以仅所有者可读的权限保存到 `$DSH_HOME/camera-captures`；最近 20 张照片可按 id 访问。两个操作都只是观察：不移动机器人，也不修改持久相机设置。机器人存在当前运行（即使是空闲运行）时会拒绝预览拍照；`capture` 以 `CAMERA_RUN_ACTIVE` 报告该状态。路由用 `id` 返回照片，用 `id` 加 `kind=annotated` 返回标注图。
+
+`inspect` 用 `labscriptai-ot/servers/opentrons-mcp/scripts/vision_check.py` 和 `labscriptai-ot/vision/models/weights/deck_v2_best.pt` 中的实验台训练权重分析最新或指定照片，限制输出大小和运行时间，返回 Flex 十二个槽位的观察结果和检出的耗材。槽位映射优先使用 `labscriptai-ot/automation/photo/deck_calibration.json` 标定文件；没有标定时退回脚本的均匀图像网格，对倾斜的相机视角映射较不准确。`MOSS_VISION_SCRIPT`、`MOSS_VISION_WEIGHTS` 和 `MOSS_VISION_CALIBRATION` 可覆盖内置路径。分析需要项目 uv 环境中的 `ultralytics` 和 `opencv-python-headless`；缺少时 `inspect` 会带脚本诊断失败，而 `capture` 仍可用。
+
+把视觉依赖装进项目解释器且不改锁文件：
+
+```sh
+uv pip install --python <interpreter> --torch-backend cpu "numpy<2" "opencv-python-headless<5" ultralytics
+```
+
+`numpy<2` 约束保证 Opentrons 模拟仍可导入，因为当前 Opentrons 版本不接受 NumPy 2。之后执行 `uv sync --locked` 会移除锁文件之外的包，环境重新同步后需要重装这些依赖。每个相机安装角度标定一次：运行 `labscriptai-ot/automation/click_deck_corners.py --image <台面照片>`，按提示依次点选 A1、A3、D3、D1 四个台面角点，工具会写出 `deck_calibration.json`。没有标定时槽位改用均匀网格，所有检测槽位都会报告为待复核。
+
+`vision-tools.mjs` 插件只在 `moss-experiment` 预设内注册 `capture_deck_photo` 和 `inspect_deck`。视觉只是观察，不是已确认的台面事实：未知槽位、低置信度标签和被标记需要复核的检测都要操作员确认，照片也不能证明实验结果、液体状态或设备就绪。每次结果还带有根据已保存绝对路径生成的 `photoMarkdown` 或 `annotatedMarkdown` 行；助手把这行放进回复，聊天界面就会通过需要认证的 `/api/file` 路由把照片直接显示在对话里。模型本身只收到这段 Markdown 文本，因此文本模型无需图像能力，图片字节也不会进入模型请求。
+
 ## 已知限制
 
 - 本地主机插件提供模型生成协议的 Agent 工具和受控真机控制工具。MCP 实验操作尚未接入。预览选择保存在内存中；重启后状态路由会按上文用保存的分析数据重建，重建只重新生成场景，不重新运行分析。

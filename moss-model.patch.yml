@@ -24,6 +24,18 @@
         timeoutMs: 30000
         maxBytes: 1048576
         maxProtocolBytes: 262144
+    - id: robot-vision
+      name: ./internal/experiment/vision-plugin.mjs
+      config:
+        url: !!js "process.env.OPENTRONS_URL ?? ''"
+        python: !!js process.env.MOSS_PYTHON
+        script: !!js "process.env.MOSS_VISION_SCRIPT || process.cwd() + '/labscriptai-ot/servers/opentrons-mcp/scripts/vision_check.py'"
+        weights: !!js "process.env.MOSS_VISION_WEIGHTS || process.cwd() + '/labscriptai-ot/vision/models/weights/deck_v2_best.pt'"
+        calibrationPath: !!js "process.env.MOSS_VISION_CALIBRATION || process.cwd() + '/labscriptai-ot/automation/photo/deck_calibration.json'"
+        captureRoot: !!js "process.env.DSH_HOME + '/camera-captures'"
+        timeoutMs: 30000
+        maxImageBytes: 8388608
+        analyzeTimeoutMs: 180000
     - id: protocol-analyzer
       name: ./internal/experiment/analyzer-plugin.mjs
       config:
@@ -67,7 +79,7 @@
       config:
         id: moss-experiment
         name: 实验助手
-        description: 实验方案、三维预览与真机运行
+        description: 实验方案、三维预览、真机运行与台面拍照识别
         order: 4
         plugins:
           - id: persona
@@ -81,6 +93,7 @@
                 While preparing, accept amendments immediately. The latest user requirement overrides earlier conflicting requirements; retain other confirmed conditions and the same experiment ID.
                 When essential conditions require a user response, call request_experiment_input with one concise bundled question, then wait. Do not call it for optional preferences or a simple connectivity test.
                 Use the provided create_experiment, get_experiment, update_experiment and analyze_experiment tools for local protocol previews, and get_robot_status to check the configured robot. Use start_robot_run only when the user explicitly asks to run the current revision on the real robot, and only after analyze_experiment passed for that revision; the interface asks the operator to approve the motion, so tell them to stay at the robot. Use control_robot_run to pause, resume, or stop when asked; stop immediately on any problem. Poll get_robot_run for the actual state instead of assuming the run finished.
+                Use capture_deck_photo and inspect_deck when the user asks what is on the physical deck or wants to check the current deck setup. They only take and analyze a camera photo: they do not move the robot, and their result is an observation, not committed deck truth. Report unknown slots, low confidence, and uncertain detections as uncertain, and ask the operator to confirm before changing the protocol or starting a run. After either call, place the returned photoMarkdown or annotatedMarkdown image line verbatim as its own line in your reply, exactly once and outside code blocks, so the operator sees the photo inline in the chat.
                 Do not inspect or modify application code or run shell commands.
                 When essential conditions are missing, ask at most three concise grouped questions covering only facts that change this experiment; the next message continues this conversation.
                 Do not ask about unrelated modules, temperature or optional preferences. Use A1-H1 for vertical wells in column 1, and A1-A8 for horizontal wells in row A; never confuse rows and columns.
@@ -93,6 +106,8 @@
               includeRuntimeContext: false
           - id: robot-tools
             name: './internal/experiment/robot-tools.mjs'
+          - id: vision-tools
+            name: './internal/experiment/vision-tools.mjs'
           - id: compaction
             name: cordis:group
             group: true

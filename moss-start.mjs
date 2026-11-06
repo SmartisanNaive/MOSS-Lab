@@ -32,6 +32,7 @@ const originalPatch = readFileSync(resolve(root, 'moss-model.patch.yml'), 'utf8'
 const presetPlugins = [
   ['./internal/chat-tools.mjs', 'chat 工具'],
   ['./internal/experiment/robot-tools.mjs', '真机工具'],
+  ['./internal/experiment/vision-tools.mjs', '视觉工具'],
 ]
 for (const [name, label] of presetPlugins) {
   if (!originalPatch.includes(`name: '${name}'`)) throw new Error(`moss-model.patch.yml 缺少 ${label} 插件配置`)

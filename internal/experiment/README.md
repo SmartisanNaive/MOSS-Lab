@@ -59,6 +59,22 @@ The `robot-control-plugin.mjs` host plugin reads `OPENTRONS_URL` at load time as
 
 `start_robot_run` and the pause and resume actions of `control_robot_run` require the operator's approval in the Web UI; stop never does. These checks do not establish physical safety or biological accuracy, and unavailable door or emergency-stop readings are not checked. The operator must be at the robot, and run completion and physical results come only from `get_robot_run`.
 
+## Deck vision
+
+The `vision-plugin.mjs` host plugin reads `OPENTRONS_URL` at load time as its fixed camera target and accepts only an http or https URL; an empty value leaves capture unavailable while the service stays mounted. It provides the `experimentVision` service with `capture` and `inspect`, plus the authenticated `/api/robot-camera` route. `capture` reads camera state with `GET /camera`, takes one photo with `POST /camera/capturePreviewImage`, and saves it with owner-only permissions under `$DSH_HOME/camera-captures`; the newest 20 captures stay addressable. Both operations are observation-only: they never move the robot and never change persistent camera settings. The robot rejects preview capture while a run is current, even an idle one; `capture` reports that state as `CAMERA_RUN_ACTIVE`. The route serves a capture with `id` and its annotated overlay with `id` and `kind=annotated`.
+
+`inspect` runs `labscriptai-ot/servers/opentrons-mcp/scripts/vision_check.py` with the lab-trained weights at `labscriptai-ot/vision/models/weights/deck_v2_best.pt` against the newest or a chosen capture, bounds its output and runtime, and returns per-slot observations for the 12 Flex slots plus detected labware. Slot mapping uses `labscriptai-ot/automation/photo/deck_calibration.json` when that calibration exists and otherwise falls back to the script's uniform image grid, which maps an angled camera view less accurately. `MOSS_VISION_SCRIPT`, `MOSS_VISION_WEIGHTS`, and `MOSS_VISION_CALIBRATION` override the bundled paths. Analysis needs `ultralytics` and `opencv-python-headless` in the project uv environment; without them, `inspect` fails with the script's diagnostic while `capture` keeps working.
+
+Install the vision packages into the project interpreter without changing the lockfile:
+
+```sh
+uv pip install --python <interpreter> --torch-backend cpu "numpy<2" "opencv-python-headless<5" ultralytics
+```
+
+The `numpy<2` constraint keeps the Opentrons simulation importable, because the current Opentrons release rejects NumPy 2. A later `uv sync --locked` prunes packages outside the lockfile and removes these extras, so reinstall them after any environment resync. Calibrate once per camera mounting angle with `labscriptai-ot/automation/click_deck_corners.py --image <capture>`; the tool writes `deck_calibration.json` and asks the operator to click the A1, A3, D3, and D1 deck corners. Without calibration, slot assignment falls back to the uniform grid and every detection slot is reported uncertain.
+
+The `vision-tools.mjs` plugin registers `capture_deck_photo` and `inspect_deck` only inside the `moss-experiment` preset. Vision is observation-only and is not committed deck truth: unknown slots, low-confidence labels, and detections flagged for review need operator confirmation, and a photo cannot establish experimental results, liquid states, or device readiness. Each result also carries a ready-made `photoMarkdown` or `annotatedMarkdown` line built from the saved absolute path; the assistant places that line in its reply, and the chat renders the image inline through the authenticated `/api/file` route. The model itself receives only that Markdown text, so a text-only route needs no image capability and the image bytes never enter the model request.
+
 ## Known limitations
 
 - The local host plugins provide Agent tools for model-generated protocols and gated real-robot control. MCP experiment operations are not connected. Preview selection is in memory; after a restart the status route rebuilds it from the persisted analysis (see above), and a rebuild re-runs scene generation only, not the analysis.

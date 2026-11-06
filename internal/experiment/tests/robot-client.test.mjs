@@ -112,3 +112,50 @@ test('sends credentials from the configured URL as basic auth and strips them', 
     assert.ok(robot.requests.every(request => !String(request.headers.authorization ?? '').includes('secret')))
   } finally { await robot.close() }
 })
+
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46])
+
+test('reads camera state and captures a preview image as raw bytes', async () => {
+  const robot = await startFakeRobot(request => {
+    if (request.method === 'GET' && request.path === '/camera') return { body: { cameraEnabled: true, liveStreamEnabled: false, errorRecoveryCameraEnabled: true } }
+    if (request.method === 'POST' && request.path === '/camera/capturePreviewImage') return { body: JPEG, headers: { 'Content-Type': 'image/jpeg' } }
+    return healthyRobot()(request)
+  })
+  try {
+    const client = createRobotClient(config(robot.url))
+    assert.deepEqual(await client.cameraStatus(), { cameraEnabled: true, liveStreamEnabled: false, errorRecoveryCameraEnabled: true })
+    const image = await client.capturePreviewImage()
+    assert.equal(image.contentType, 'image/jpeg')
+    assert.deepEqual(image.data, JPEG)
+    const captureRequest = robot.requests.find(request => request.path === '/camera/capturePreviewImage')
+    assert.equal(captureRequest.method, 'POST')
+    assert.deepEqual(JSON.parse(captureRequest.body.toString('utf8')), { data: {} })
+    assert.equal(captureRequest.headers['opentrons-version'], '4')
+  } finally { await robot.close() }
+})
+
+test('rejects camera responses that are not encoded images', async () => {
+  const notAnImage = await startFakeRobot(() => ({ body: '<html>not a camera</html>', headers: { 'Content-Type': 'text/html' } }))
+  try {
+    const client = createRobotClient(config(notAnImage.url))
+    await assert.rejects(client.capturePreviewImage(), error => error instanceof RobotError && error.code === 'CAMERA_UNSUPPORTED_IMAGE')
+  } finally { await notAnImage.close() }
+  const truncated = await startFakeRobot(() => ({ body: Buffer.from('<html>'), headers: { 'Content-Type': 'image/jpeg' } }))
+  try {
+    const client = createRobotClient(config(truncated.url))
+    await assert.rejects(client.capturePreviewImage(), error => error instanceof RobotError && error.code === 'CAMERA_INVALID_IMAGE')
+  } finally { await truncated.close() }
+})
+
+test('reports an active run blocking preview capture with a stable code', async () => {
+  const robot = await startFakeRobot(() => ({ status: 422, body: { message: 'Cannot capture preview photo, run is active.', errorCode: '4000' } }))
+  try {
+    const client = createRobotClient(config(robot.url))
+    await assert.rejects(client.capturePreviewImage(), error => {
+      assert.ok(error instanceof RobotError)
+      assert.equal(error.code, 'CAMERA_RUN_ACTIVE')
+      assert.match(error.message, /active run/)
+      return true
+    })
+  } finally { await robot.close() }
+})
