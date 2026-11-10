@@ -59,7 +59,7 @@
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-http-proxy": "workspace:*",
     "@modelcontextprotocol/server": "2.2.0",
-    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/node": "2.1.1",
     "zod": "4.4.3",
     "@deepseek-ai/dsh-mcp-resources": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*"

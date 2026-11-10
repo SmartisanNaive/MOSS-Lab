@@ -13474,8 +13474,8 @@ importers:
         specifier: workspace:*
         version: link:../../core/tools
       '@modelcontextprotocol/node':
-        specifier: 2.0.0
-        version: 2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)
+        specifier: 2.1.1
+        version: 2.1.1(@modelcontextprotocol/server@2.2.0)
       '@modelcontextprotocol/server':
         specifier: 2.2.0
         version: 2.2.0
@@ -20061,15 +20061,11 @@ packages:
     resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
     engines: {node: '>=20'}
 
-  '@modelcontextprotocol/node@2.0.0':
-    resolution: {integrity: sha512-Y4hAC2XdGDUdDOCbLDOCA4+aL3NUldjsOWlDL/YwpAxrPhRm1xHd7lZ+mLacvZ9t3PaH28wgNoaLQGrIk1P2pg==}
+  '@modelcontextprotocol/node@2.1.1':
+    resolution: {integrity: sha512-EY92OAXN2xYL7tNS/MVsWJW1v8VHAPwl9B4Ca3pCrjmvqyC+S1C/6UHsMxF2GoFPraS5Yyg56vFz9brVpFojMA==}
     engines: {node: '>=20'}
     peerDependencies:
-      '@modelcontextprotocol/server': ^2.0.0
-      hono: ^4.11.4
-    peerDependenciesMeta:
-      hono:
-        optional: true
+      '@modelcontextprotocol/server': ^2.3.0
 
   '@modelcontextprotocol/sdk@1.31.0':
     resolution: {integrity: sha512-UvTMgnNlnIBO/22ob2RcVGDlcvOslQs8T59+FTGdA0L27a39fdGF/EDETNtDVK4DZGpwomlsYpRdA8UXcVL/pw==}
@@ -27817,11 +27813,10 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
+  '@modelcontextprotocol/node@2.1.1(@modelcontextprotocol/server@2.2.0)':
     dependencies:
       '@hono/node-server': 1.19.17(hono@4.13.7)
       '@modelcontextprotocol/server': 2.2.0
-    optionalDependencies:
       hono: 4.13.7
 
   '@modelcontextprotocol/sdk@1.31.0(supports-color@9.4.0)(zod@4.4.3)':
