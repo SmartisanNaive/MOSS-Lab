@@ -25,12 +25,12 @@ function replaceRequired(source: string, target: string, replacement: string): s
  * @param id - published experiment id used in the expected resource URLs.
  * @param revision - checked experiment revision used in the expected resource URLs.
  * @param task - protocol-check task id used in the expected resource URLs.
- * @param endpoint - preview route used by those URLs; defaults to `/api/experiment-preview`, or use `/api/experiment-demo`.
+ * @param endpoint - preview route used by those URLs; defaults to `api/experiment-preview`, or use `api/experiment-demo`.
  * @returns an HTML string containing the bundled resources and CSP-limited bootstrap code.
  * @throws when a required resource reference is missing or bundled text is not valid UTF-8.
  */
-export function createPreviewDocument(bundle: PreviewBundle, session: string, id: string, revision: number, task: string, endpoint: '/api/experiment-preview' | '/api/experiment-demo' = '/api/experiment-preview'): string {
-  const url = (resource: string) => `${endpoint}?${new URLSearchParams({ id, revision: String(revision), session, task, resource })}`
+export function createPreviewDocument(bundle: PreviewBundle, session: string, id: string, revision: number, task: string, endpoint: 'api/experiment-preview' | 'api/experiment-demo' = 'api/experiment-preview'): string {
+  const url = (resource: string) => `/${endpoint}?${new URLSearchParams({ id, revision: String(revision), session, task, resource })}`
   let viewer = text(bundle.viewer)
   let script = text(bundle.script)
   viewer = replaceRequired(viewer, url('three'), '__PREVIEW_THREE__')
