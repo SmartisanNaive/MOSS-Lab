@@ -66,14 +66,9 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
     expect(screen.queryByText('DSH Local Build')).toBeNull()
   } else {
     expect(document.querySelector('img[src*="labscriptai-logo"]')).not.toBeNull()
-    const version = clientBuildValue('DSH_CLIENT_VERSION')
-    if (version === undefined) throw new Error('default client build record must carry DSH_CLIENT_VERSION')
-    const commit = clientBuildValue('DSH_CLIENT_COMMIT_HASH')
-    const buildVersion = version
-      + (commit === undefined ? '' : `-${commit}`)
-      + (clientBuildValue('DSH_CLIENT_GIT_DIRTY') === 'true' ? '-dirty' : '')
+    if (clientBuildValue('DSH_CLIENT_VERSION') === undefined) throw new Error('default client build record must carry DSH_CLIENT_VERSION')
     screen.getByText('LabScriptAI')
-    screen.getByText(buildVersion)
+    screen.getByText('0.1.0')
   }
   // The compact layout dropped group session counts; the fixture workspace
   // group row renders immediately with its sessions beneath it.

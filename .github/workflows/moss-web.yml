@@ -1,0 +1,42 @@
+name: MOSS web
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  web:
+    name: Build and test web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web and check types
+        run: pnpm run build
+      - name: Test experiment storage and preview resources
+        run: node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/preview-resources.test.mjs
+      - name: Test client and workflow integration
+        run: >-
+          pnpm exec vitest run
+          packages/client/ui-sidebar-experiment/tests/bundle.client.spec.ts
+          packages/client/ui-sidebar-experiment/tests/experiment.client.spec.tsx
+          packages/test-support/client-runtime/tests/assembly-test-client.client.spec.ts
+      - name: Test built web boot
+        run: pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/built-boot.expected.e2e.ts

@@ -163,8 +163,15 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
   })
 }
 
-it.each(['release-publish.yml', 'release-vendor-publish.yml'])('keeps %s manual and entirely hosted', (file) => {
+it.each(['release-publish.yml', 'release-vendor-publish.yml'])('keeps %s manual and hosted in this repository', (file) => {
   const publish = workflow(file)
   expect(Object.keys(publish.on)).toEqual(['workflow_dispatch'])
-  for (const job of Object.values(publish.jobs)) expect(job['runs-on']).toBe(hosted)
+  for (const job of Object.values(publish.jobs)) {
+    const runner = job['runs-on']
+    if (!runner.startsWith('${{')) expect(runner).toBe(hosted)
+    else {
+      expect(evaluate(runner, { 'github.repository': 'SmartisanNaive/MOSS-Lab', 'github.event_name': 'workflow_dispatch' })).toBe(hosted)
+      expect(evaluate(runner, { 'github.repository': 'SmartisanNaive/MOSS-Lab', 'github.event_name': 'workflow_dispatch', 'vars.DSH_CI_FAILOVER_LINUX': 'selfhosted' })).toBe(hosted)
+    }
+  }
 })

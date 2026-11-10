@@ -44,7 +44,7 @@ export const robotStatusProvider: ResourceProvider<'robotstatus'> = {
   async *open(address, { signal }) {
     if (new URL(address).pathname === '/0') return
     try {
-      const response = await fetch('/api/robot-status', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]) })
+      const response = await fetch('api/robot-status', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]) })
       if (!response.ok) throw new Error('Status request failed')
       const value: unknown = await response.json()
       if (!isRobotStatus(value)) throw new Error('Invalid robot status')
@@ -91,7 +91,7 @@ export const watchProvider: ResourceProvider<'experimentwatch'> = {
       try {
         if (!session) throw new Error('Missing session')
         const params = new URLSearchParams({ resource: 'status', session })
-        const response = await fetch(`/api/experiment-preview?${params}`, { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]), credentials: 'same-origin', cache: 'no-store' })
+        const response = await fetch(`api/experiment-preview?${params}`, { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]), credentials: 'same-origin', cache: 'no-store' })
         if (!response.ok) throw new Error('Status request failed')
         const status = parseStatus(await response.json())
         if (status === undefined) throw new Error('Invalid status response')
@@ -115,7 +115,7 @@ export const statusProvider: ResourceProvider<'experimentstatus'> = {
         const demo = url.searchParams.get('mode') === 'demo'
         const session = demo ? 'demo' : decodeURIComponent(url.pathname.split('/')[1] ?? '')
         if (!session) throw new Error('Missing session')
-        const endpoint = demo ? '/api/experiment-demo' : '/api/experiment-preview'
+        const endpoint = demo ? 'api/experiment-demo' : 'api/experiment-preview'
         const params = new URLSearchParams(demo ? { resource: 'status' } : { resource: 'status', session })
         const response = await fetch(`${endpoint}?${params}`, {
           signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]), credentials: 'same-origin', cache: 'no-store',

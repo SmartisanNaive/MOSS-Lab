@@ -20,13 +20,13 @@ concurrency:
 
 jobs:
 
-  # Three enterprise jobs isolate coverage, static analysis, and the
+  # Separate jobs isolate coverage, static analysis, and the
   # build-backed consumer tail. The consumer job owns the only Linux build so
   # all three jobs enter runner allocation independently.
   #
-  # FAILOVER (Linux): each Linux enterprise job resolves its pool through the
-  # DSH_CI_FAILOVER_LINUX repository variable. Unset (normal), the expressions
-  # pick the hosted enterprise pools below. Setting the variable to
+  # FAILOVER (Linux): each Linux job resolves its pool through the
+  # DSH_CI_FAILOVER_LINUX repository variable. Unset, the expressions
+  # pick GitHub-hosted runners. Setting the variable to
   # 'selfhosted' (repo Settings → Actions → Variables; writer-manageable
   # repository state — not PR-editable, no merge required) retargets all
   # three onto the in-house
@@ -35,9 +35,9 @@ jobs:
   # Setting the variable to 'blacksmith' instead routes the same jobs onto
   # Blacksmith's hosted runners sized per workload (see
   # .agents/notes/implemented/process/2026-09-09-blacksmith-failover-leg.md). The
-  # in-house pool's readiness is re-proven on every master push by the
-  # serial-linux-selfhosted standby lane in ci-master.yml. Native Windows jobs
-  # and their separate DSH_CI_FAILOVER_WINDOWS switch live in ci-windows.yml.
+  # in-house pool runs the serial-linux-selfhosted lane on main pushes when
+  # the selfhosted switch is enabled. Native Windows jobs and their separate
+  # DSH_CI_FAILOVER_WINDOWS switch live in ci-windows.yml.
   node-24:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -45,7 +45,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || 'ubuntu-24.04' }}
     name: node 24 / static
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.
@@ -112,7 +112,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || 'ubuntu-24.04' }}
     name: node 24 / coverage
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.
@@ -213,7 +213,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || 'ubuntu-24.04' }}
     name: node 24 / lint
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.
@@ -338,7 +338,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || 'ubuntu-24.04' }}
     name: node 24 / snapshots and artifacts
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.

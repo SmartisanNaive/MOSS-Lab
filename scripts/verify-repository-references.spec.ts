@@ -97,6 +97,12 @@ describe('maintained repository reference policy', () => {
     expect(scanRepositoryReferences(fixture.root)).toHaveLength(4)
   })
 
+  it('does not treat pure-decimal lockfile fields as commit identifiers', (test) => {
+    const fixture = repository(test)
+    fixture.write('uv.lock', '{ url = "https://files.example.invalid/pillow.whl", hash = "sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91", size = 6940830, upload-time = "2026-07-01T11:54:13.732Z" }')
+    expect(scanRepositoryReferences(fixture.root)).toEqual([])
+  })
+
   it('checks available unreachable commits without requiring a branch or network', (test) => {
     const fixture = repository(test)
     const unreachable = fixture.git(['commit-tree', fixture.tree, '-m', 'unreachable fixture'])

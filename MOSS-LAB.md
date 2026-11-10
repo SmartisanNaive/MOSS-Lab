@@ -34,6 +34,8 @@ Windows 上把 Python 路径换成 `labscriptai-ot\.venv\Scripts\python.exe`。`
 
 首次使用按当前相机安装角度标定一次台面：运行 `labscriptai-ot\.venv\Scripts\python.exe labscriptai-ot\automation\click_deck_corners.py --image <台面照片>`，在弹出窗口里依次点选 A1、A3、D3、D1 四个角点并保存。工具会写出 `labscriptai-ot\automation\photo\deck_calibration.json`，之后识别会自动使用它；也可以把文件放到任意位置并用 `MOSS_VISION_CALIBRATION` 指向它。未标定时识别仍能列出检测到的耗材，但槽位归属会被标记为待复核。拍照或识别完成后，照片会直接显示在工作台的对话里，不需要再点链接。机器人存在当前运行（即使处于空闲）时会拒绝预览拍照，需要先结束该运行再拍。
 
+网页 CI 使用 `MOSS web` 工作流检查构建、类型、实验存储与预览资源，以及网页客户端启动。该工作流不部署网站，也不运行需要真实机器人或模型凭据的测试。
+
 ## English
 
 MOSS Lab combines the web agent, local Opentrons protocol simulation, and Flex3D animation in one project. Robot-related source is in `labscriptai-ot/`; the web launcher does not depend on a sibling robot project.
@@ -65,6 +67,8 @@ uv pip install --python labscriptai-ot/.venv/bin/python --torch-backend cpu "num
 On Windows use `labscriptai-ot\.venv\Scripts\python.exe`. The `numpy<2` constraint keeps the Opentrons simulation working; a later `uv sync --locked` removes these extras, so reinstall them after resyncing. Vision results are observations, not confirmed deck truth: unknown slots, low-confidence labels, and detections flagged for review need operator confirmation.
 
 Calibrate the deck once for the current camera angle: run `labscriptai-ot\.venv\Scripts\python.exe labscriptai-ot\automation\click_deck_corners.py --image <deck photo>`, click the A1, A3, D3, and D1 corners in the window, and save. The tool writes `labscriptai-ot\automation\photo\deck_calibration.json`, which analysis then uses automatically; alternatively point `MOSS_VISION_CALIBRATION` at a file elsewhere. Without calibration, analysis still lists detected labware, but slot assignments are reported as uncertain. After a capture or analysis, the photo appears inline in the workbench conversation instead of only as a link. The robot rejects preview capture while a run is current, even an idle one; finish or stop the run first.
+
+The `MOSS web` workflow checks the build, types, experiment storage and preview resources, and web client boot. It does not deploy the site or run tests that require a real robot or model credentials.
 
 ## License and citation / 许可和引用
 

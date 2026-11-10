@@ -76,7 +76,7 @@ export async function fetchPreviewBundle(session: string, id: string, revision: 
     }
     if (!(texture.file in assets)) assets[texture.file] = await read('asset', texture.file)
   }
-  const statusParams = new URLSearchParams(endpoint === '/api/experiment-demo' ? { resource: 'status' } : { resource: 'status', session })
+  const statusParams = new URLSearchParams(endpoint === 'api/experiment-demo' ? { resource: 'status' } : { resource: 'status', session })
   const response = await fetch(`${endpoint}?${statusParams}`, { signal, credentials: 'same-origin', cache: 'no-store' })
   if (!response.ok) throw new Error('Preview status unavailable')
   const status: unknown = await response.json()

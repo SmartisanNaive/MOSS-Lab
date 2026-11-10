@@ -138,7 +138,7 @@ describe('CI workflow', () => {
       expect(job.steps).toContainEqual(expect.objectContaining({ run: command }))
     }
     for (const [file, command] of [
-      ['release-publish.yml', 'pnpm run build:official'],
+      ['release-publish.yml', 'pnpm run build:official --serial'],
       ['release-vendor-publish.yml', 'pnpm run build:lib:host'],
     ] as const) {
       expect(workflowJob(loadWorkflow('.github/workflows/' + file), 'pack').steps)
@@ -407,7 +407,7 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must not use the Linux failover switch`).not.toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on']).toContain('self-hosted')
       expect(job['runs-on']).toContain('dsh-win-ci')
-      expect(job['runs-on']).toContain('dsh-windows-2025-16core')
+      expect(job['runs-on']).toContain('windows-2025')
       const cores = jobName === 'windows-native-tests' ? 2 : 16
       expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_WINDOWS: 'blacksmith' } }))
         .toBe(`blacksmith-${cores}vcpu-windows-2025`)
@@ -504,8 +504,8 @@ describe('CI workflow', () => {
     expect(report?.run).toContain('::warning::')
     expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
-    // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    // serial-windows runs on main pushes when the self-hosted pool is enabled.
+    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -594,9 +594,9 @@ describe('CI workflow', () => {
       })
     }
     for (const [name, selector, variable, pool, hosted] of [
-      ['linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'ubuntu-24.04'],
       ['linux aggregate', selectors.linuxAggregate, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'ubuntu-latest'],
-      ['windows lanes', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
+      ['windows lanes', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'windows-2025'],
     ] as const) {
       expect(evaluate(selector, { [variable]: 'blacksmith' }), `${name} blacksmith value`).toMatch(/^blacksmith-/)
       expect(evaluate(selector, { [variable]: 'selfhosted' }), `${name} selfhosted value`).toEqual(pool)
@@ -783,6 +783,7 @@ describe('CI workflow', () => {
       throw new TypeError('both CI workflows must define on')
     }
     expect(Object.keys(workflow.on).sort()).toEqual(['push', 'workflow_dispatch'])
+    expect(workflowEvent(workflow, 'push').branches).toEqual(['main'])
     expect(Object.keys(prWorkflow.on)).toEqual(['pull_request'])
     const windowsWorkflow = loadWorkflow('.github/workflows/ci-windows.yml')
     if (!isRecord(windowsWorkflow.on)) throw new TypeError('CI Windows workflow must define on')
@@ -798,12 +799,16 @@ describe('CI workflow', () => {
     expect(pythonWorkflow.env).toEqual(prWorkflow.env)
 
     // Drills share the parent run’s supersession policy.
-    for (const name of ['serial-linux-selfhosted', 'serial-windows']) {
+    for (const [name, variable] of [['serial-linux-selfhosted', 'DSH_CI_FAILOVER_LINUX'], ['serial-windows', 'DSH_CI_FAILOVER_WINDOWS']] as const) {
       const job = workflow.jobs[name]
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
-      // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe(`github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.${variable} == 'selfhosted'`)
+    }
+    for (const name of ['python-runtime', 'windows']) {
+      const job = workflow.jobs[name]
+      if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
+      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'")
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.
@@ -909,7 +914,7 @@ describe('CI workflow', () => {
       ['push', 'ssh-helper', false], ['pull_request', 'ssh-helper', false],
       ['workflow_dispatch', 'larger-runner-benchmark', false], ['workflow_dispatch', 'ssh-helper', true],
     ] as const) {
-      expect(runInNewContext(master.if, { github: { event_name: event, ref: 'refs/heads/master' }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+      expect(runInNewContext(master.if, { github: { event_name: event, ref: 'refs/heads/main' }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
     }
     expect(master.with).toEqual({ targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-macos-x64' })
     const workflow = loadWorkflow('.github/workflows/build-exe-for-ssh-helper.yml')
@@ -1448,79 +1453,36 @@ describe('Weighted approval workflow', () => {
   })
 })
 
-describe('Issue lifecycle workflow', () => {
-  it('allocates lifecycle runners only for events that can change the board', () => {
-    const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
-    const policy = loadWorkflow('.github/workflows/issue-policy.yml')
-    const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
-    if (!Array.isArray(lifecycleJob.steps)) throw new TypeError('Issue lifecycle job must define steps')
-
-    expect(lifecycle.on).toHaveProperty('pull_request')
-    expect(lifecycle.on).toHaveProperty('pull_request_review')
-    expect(lifecycleJob.if).toContain("github.event.review.state == 'changes_requested'")
-    expect(lifecycleJob.if).toContain('github.event.changes.body != null')
-    // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
-    // ready_for_review (issue-policy owns that) and only reacts to submitted
-    // review events.
-    const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
-    const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
-    expect(lifecyclePullRequest.types).toContain('opened')
-    expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
-    expect(lifecyclePullRequest.types).toContain('review_requested')
-    expect(lifecycleReview.types).toEqual(['submitted'])
-    expect(lifecyclePullRequest.types).not.toContain('synchronize')
-    expect(lifecyclePullRequest.types).not.toContain('labeled')
-    expect(lifecyclePullRequest.types).not.toContain('unlabeled')
-    const issueEvents = workflowEvent(lifecycle, 'issues')
-    expect(issueEvents.types).not.toContain('assigned')
-    expect(issueEvents.types).not.toContain('unassigned')
-    expect(issueEvents.types).toContain('typed')
-    expect(issueEvents.types).toContain('untyped')
-    const steps = lifecycleJob.steps.filter(isRecord)
-    const tokenStep = steps.find(s => s.name === 'Create project token')
-    const handleStep = steps.find(s => s.name === 'Handle repository event')
-    expect(tokenStep?.if).toBeUndefined()
-    expect(handleStep?.if).toBeUndefined()
-
-    // issue-policy owns PR validation; it is read-only and a real gate.
-    const policyPullRequest = workflowEvent(policy, 'pull_request')
-    expect(policyPullRequest.types).toContain('ready_for_review')
-  })
-
-  it('mints Project credentials only after preflight and always revalidates current metadata', () => {
+describe('Issue policy workflow', () => {
+  it('validates pull requests from the trusted default branch without external credentials', () => {
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const policyJob = workflowJob(policy, 'policy')
     if (!Array.isArray(policyJob.steps)) throw new TypeError('Issue policy job must define steps')
-    const steps = policyJob.steps.filter(isRecord)
-    const tokenStep = steps.find(step => step.name === 'Create Project read token')
-    const validateStep = steps.find(step => step.name === 'Validate pull request')
-    const preflightStep = steps.find(step => step.id === 'preflight')
-    expect(preflightStep).toMatchObject({ shell: 'bash' })
-    expect(preflightStep?.run).toContain('if [ -f .github/issue-management/selective-preflight.json ]; then')
-    expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
-    expect(preflightStep?.if).toBeUndefined()
-    expect(policyJob.if).toBeUndefined()
-    expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
+    const serialized = JSON.stringify(policy)
 
-    expect(tokenStep).toMatchObject({
-      id: 'app-token',
-      if: "${{ steps.preflight.outputs.needs-project == 'true' }}",
-      uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
+    expect(serialized).not.toContain('pull_request_target')
+    expect(serialized).not.toContain('secrets.')
+    expect(policy.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' })
+    expect(policyJob.if).toBeUndefined()
+    expect(workflowEvent(policy, 'pull_request').types)
+      .toEqual(['opened', 'edited', 'synchronize', 'reopened', 'ready_for_review'])
+
+    const steps = policyJob.steps.filter(isRecord)
+    expect(steps).toHaveLength(2)
+    expect(steps[0]).toMatchObject({
+      name: 'Check out trusted policy',
+      uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
       with: {
-        'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',
-        'private-key': '${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}',
-        owner: 'deepseek-harness',
-        repositories: 'deepseek-harness',
-        'permission-issues': 'read',
-        'permission-organization-projects': 'read',
+        ref: '${{ github.event.repository.default_branch }}',
+        'persist-credentials': false,
       },
     })
-    expect(validateStep).toMatchObject({
-      env: {
-        GITHUB_TOKEN: '${{ github.token }}',
-        PROJECT_TOKEN: '${{ steps.app-token.outputs.token }}',
-      },
+    expect(steps[1]).toMatchObject({
+      name: 'Validate pull request',
+      env: { GITHUB_TOKEN: '${{ github.token }}' },
+      run: 'node .github/issue-management/policy.mjs pr',
     })
+    expect(steps[1]?.if).toBeUndefined()
   })
 })
 
