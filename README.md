@@ -85,6 +85,10 @@ MOSS calls `simulate_protocol` and `protocol_artifacts` (artifact API v1). The p
 
 The daily `labscriptai-sync` workflow checks published releases, updates the checksum lock, installs the candidate, and exercises both public tools before opening a draft upgrade PR. Merging the reviewed lock changes the next startup; running processes keep their current version. The initial lock pins the published v0.1.3 ZIP. The workflow logs and skips incompatible artifact API versions. To open draft PRs, the upstream repository must allow GitHub Actions to create pull requests. A maintainer can approve CI on the bot-created PR before merging. For plugin development, set `LABSCRIPTAI_OT_ROOT` to a local checkout; the startup log marks it `development`. Run `node --import tsx/esm scripts/check-labscriptai.mjs` to check the locked runtime without a model or robot.
 
+## Continuous integration
+
+The MOSS web workflow cancels an older run when a new commit updates the same pull request. Push builds on `main` finish independently. Pull requests use the preview workflow for aggregate type checks and Linux browser boot coverage; MOSS still builds runtime artifacts and runs its experiment and plugin checks. The main-branch MOSS workflow runs the complete build and built web boot check.
+
 ## Configuration
 
 The runtime reads its configuration from the root `.env` file:

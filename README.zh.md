@@ -85,6 +85,10 @@ MOSS 调用 `simulate_protocol` 和 `protocol_artifacts`（产物接口 v1）。
 
 每日 `labscriptai-sync` 工作流检查正式发布，更新归档摘要锁，安装候选版本并测试两个公开工具，通过后才创建升级草稿 PR。审查合并锁文件后，下次启动采用新版本；运行中的进程保留当前版本。初始锁固定到已发布的 v0.1.3 ZIP。遇到不兼容的产物接口版本，工作流会记录原因并跳过。上游仓库须允许 GitHub Actions 创建 PR，维护者可在合并前批准机器人 PR 的 CI。开发插件时可将 `LABSCRIPTAI_OT_ROOT` 指向本地仓库，启动日志会标记 `development`。运行 `node --import tsx/esm scripts/check-labscriptai.mjs` 可检查锁定版本，无需模型或机器人。
 
+## 持续集成
+
+同一拉取请求有新提交时，MOSS web 工作流取消旧运行；`main` 的推送构建独立完成。拉取请求通过预览工作流执行聚合类型检查和 Linux 浏览器启动测试，MOSS 仍构建运行产物并执行实验与插件检查。主分支的 MOSS 工作流执行完整构建和构建后的 Web 启动测试。
+
 ## 环境变量配置
 
 系统启动时从根目录下的 `.env` 文件读取关键运行时配置：

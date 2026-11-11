@@ -9,7 +9,7 @@ describe('portable plugin documents', () => {
   it('preserves plugin HTML bytes and rechecks the current session and task', async () => {
     const calls: URL[] = []
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = new URL(String(input), 'https://example.test')
+      const url = new URL(input instanceof Request ? input.url : input.toString(), 'https://example.test')
       calls.push(url)
       const resource = url.searchParams.get('resource')
       return resource === 'status' ? Response.json({ status: 'ready', ...identity }) : new Response(`<html>${resource}</html>`)
@@ -23,7 +23,7 @@ describe('portable plugin documents', () => {
   it('uses the demo endpoint without the real session', async () => {
     const calls: URL[] = []
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = new URL(String(input), 'https://example.test')
+      const url = new URL(input instanceof Request ? input.url : input.toString(), 'https://example.test')
       calls.push(url)
       return url.searchParams.get('resource') === 'status' ? Response.json({ status: 'ready', ...identity }) : new Response('<html>demo</html>')
     })
@@ -34,7 +34,7 @@ describe('portable plugin documents', () => {
 
   it('keeps animation available when the setup document is unavailable', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const resource = new URL(String(input), 'https://example.test').searchParams.get('resource')
+      const resource = new URL(input instanceof Request ? input.url : input.toString(), 'https://example.test').searchParams.get('resource')
       return resource === 'setup' ? new Response(null, { status: 404 }) : resource === 'status' ? Response.json({ status: 'ready', ...identity }) : new Response('<html>animation</html>')
     })
     expect((await fetchPreviewBundle(session, identity.id, 1, identity.task, new AbortController().signal)).setupDocument).toBeNull()
@@ -42,7 +42,7 @@ describe('portable plugin documents', () => {
 
   it('rejects a checked task changed during download', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const resource = new URL(String(input), 'https://example.test').searchParams.get('resource')
+      const resource = new URL(input instanceof Request ? input.url : input.toString(), 'https://example.test').searchParams.get('resource')
       return resource === 'status' ? Response.json({ status: 'ready', ...identity, task: 'new' }) : new Response('<html>document</html>')
     })
     await expect(fetchPreviewBundle(session, identity.id, 1, identity.task, new AbortController().signal)).rejects.toThrow('changed')

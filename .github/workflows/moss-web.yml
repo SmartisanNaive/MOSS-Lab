@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: moss-web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   DSH_TELEMETRY_DISABLED: '1'
 
@@ -28,8 +32,10 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # PR aggregate type checks run in the preview workflow; main still owns
+      # a complete build because the preview workflow only runs for PRs.
       - name: Build web and check types
-        run: pnpm run build
+        run: ${{ github.event_name == 'pull_request' && 'pnpm run build:artifacts' || 'pnpm run build' }}
       - name: Test experiment storage and preview resources
         run: node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/preview-resources.test.mjs
       - name: Test plugin lock, recovery and download resources
@@ -48,5 +54,7 @@ jobs:
           packages/client/ui-sidebar-experiment/tests/bundle.client.spec.ts
           packages/client/ui-sidebar-experiment/tests/experiment.client.spec.tsx
           packages/test-support/client-runtime/tests/assembly-test-client.client.spec.ts
+      # The Linux PR browser suite already runs this built-boot test.
       - name: Test built web boot
+        if: github.event_name != 'pull_request'
         run: pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/built-boot.expected.e2e.ts
