@@ -25,12 +25,13 @@ name: E2E (real DeepSeek API)
 # The fork/secret model and its public-repo implications are recorded in
 # .agents/notes/implemented/testing/2026-06-19-real-api-e2e-ci.md.
 #
-# Real-API checks run on changes or manual dispatch, without a nightly schedule.
+# MOSS main uses keyless web checks; real-API runs remain manual or upstream-only.
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
+    branches: [master]
 
 # Keep only the newest validation in each workflow/ref.
 concurrency:

@@ -13,6 +13,7 @@ import {
   parseApprovalPolicy,
   runApprovalCheck as runPublisher,
   publishApprovalPhase,
+  requiresWeightedApproval,
 } from './check-approval.mjs'
 
 const policySource = readFileSync(new URL('approval-policy.json', import.meta.url), 'utf8')
@@ -38,6 +39,13 @@ const pullRequestEvent = ({ author = 'author', draft = false } = {}) => ({
 })
 
 const review = (login, state, submitted_at = '2026-09-14T00:00:00Z', id = 10) => ({ user: { login }, state, submitted_at, id })
+
+test('weighted approval applies to master and excludes MOSS main and unresolved events', () => {
+  assert.equal(requiresWeightedApproval({ pull_request: { base: { ref: 'master' } } }), true)
+  for (const event of [{ pull_request: { base: { ref: 'main' } } }, { pull_request: {} }, {}]) {
+    assert.equal(requiresWeightedApproval(event), false)
+  }
+})
 
 test('loads the repository approval score policy', () => {
   const policy = parseApprovalPolicy(policySource)

@@ -632,6 +632,14 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Select the upstream base branch that requires weighted approval.
+ * @param {object} event Resolved GitHub pull-request event.
+ * @returns {boolean} Whether this event targets master.
+ */
+export function requiresWeightedApproval(event) {
+  return event.pull_request?.base?.ref === 'master'
+}
+
 async function main() {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (!eventPath) throw new Error('GITHUB_EVENT_PATH is not set')
@@ -661,6 +669,10 @@ async function main() {
   }
   if (event === null) {
     process.stdout.write('Skipped an issue, closed pull request, or superseded pull-request head.\n')
+    return
+  }
+  if (!requiresWeightedApproval(event)) {
+    process.stdout.write('Weighted approval applies only to pull requests targeting master.\n')
     return
   }
   const phase = process.argv[2]

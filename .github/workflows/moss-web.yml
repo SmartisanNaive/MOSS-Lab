@@ -34,11 +34,15 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build web and check types
         run: pnpm run build
+      - name: Test approval policy
+        run: node --test .github/review-ownership/check-approval.test.mjs
       - name: Test experiment storage and preview resources
         run: node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs internal/experiment/tests/preview-resources.test.mjs internal/xiaozhi/bridge.test.mjs internal/xiaozhi/delegation.test.mjs
       - name: Test plugin lock, recovery and download resources
         run: node --import tsx/esm --test internal/experiment/tests/plugin-runtime.test.mjs internal/experiment/tests/preview-recovery.test.mjs
       - uses: astral-sh/setup-uv@v6
+        with:
+          cache-dependency-glob: labscriptai-ot.lock.json
       - name: Build the Linux confinement launcher
         run: |
           sudo apt-get update -q
