@@ -30,6 +30,19 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
+      - name: Install Linux confinement toolchain
+        run: |
+          stat -Lc '%a %U %G %n' /etc/resolv.conf
+          for account in runner _apt; do
+            if sudo -u "$account" timeout 15 getent ahostsv4 archive.ubuntu.com; then
+              printf 'Ubuntu DNS resolves for %s\n' "$account"
+            else
+              printf 'Ubuntu DNS lookup failed for %s\n' "$account"
+            fi
+          done
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          sudo apt-get update -q -o APT::Update::Error-Mode=any -o Acquire::Retries=0
+          sudo apt-get install -yq musl-tools
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build web and check types
@@ -44,11 +57,7 @@ jobs:
         with:
           cache-dependency-glob: labscriptai-ot.lock.json
       - name: Build the Linux confinement launcher
-        run: |
-          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          sudo apt-get update -q
-          sudo apt-get install -yq musl-tools
-          pnpm --dir native/system run build:native
+        run: pnpm --dir native/system run build:native
       - name: Check the pinned plugin through public MCP
         run: node --import tsx/esm scripts/check-labscriptai.mjs
       - name: Test client and workflow integration

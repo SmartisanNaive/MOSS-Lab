@@ -87,7 +87,7 @@ MOSS 调用 `simulate_protocol` 和 `protocol_artifacts`（产物接口 v1）。
 
 ## 持续集成
 
-MOSS web 工作流对拉取请求和 `main` 推送执行完整构建、实验与小智回归、锁定插件检查及构建后的 Web 启动测试。同一拉取请求有新提交时取消旧运行；main 推送构建独立完成。上游 Harness CI、Windows、发布打包、原生扩展和 Cloudflare 预览的拉取请求工作流仅针对 `master`。真实 API 检查仅对 `master` 自动运行，保留手动触发并取消每晚定时运行。加权审批仅用于目标分支为 `master` 的拉取请求。MOSS 的 uv 缓存键只读取插件锁文件，避免遍历 pnpm 工作区符号链接。
+MOSS web 工作流对拉取请求和 `main` 推送执行完整构建、实验与小智回归、锁定插件检查及构建后的 Web 启动测试。同一拉取请求有新提交时取消旧运行；main 推送构建独立完成。上游 Harness CI、Windows、发布打包、原生扩展和 Cloudflare 预览的拉取请求工作流仅针对 `master`。真实 API 检查仅对 `master` 自动运行，保留手动触发并取消每晚定时运行。加权审批仅用于目标分支为 `master` 的拉取请求。MOSS 的 uv 缓存键只读取插件锁文件，避免遍历 pnpm 工作区符号链接。Linux 工具链先于依赖安装和构建安装；apt 索引错误会在这两步开始前终止任务。
 
 ## 环境变量配置
 
