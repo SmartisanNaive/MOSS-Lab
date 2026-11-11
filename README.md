@@ -87,7 +87,7 @@ The daily `labscriptai-sync` workflow checks published releases, updates the che
 
 ## Continuous integration
 
-The MOSS web workflow cancels an older run when a new commit updates the same pull request. Push builds on `main` finish independently. Pull requests use the preview workflow for aggregate type checks and Linux browser boot coverage; MOSS still builds runtime artifacts and runs its experiment and plugin checks. The main-branch MOSS workflow runs the complete build and built web boot check.
+The MOSS web workflow runs the complete build, experiment and Xiaozhi regressions, pinned-plugin checks, and built web boot tests for pull requests and pushes to `main`. A new commit cancels an older run of the same pull request; main push builds finish independently. The upstream Harness CI, Windows, release-package, native-addon, and Cloudflare preview pull-request workflows target `master`. Real-API checks keep their push and pull-request triggers and manual dispatch, without a nightly schedule.
 
 ## Configuration
 

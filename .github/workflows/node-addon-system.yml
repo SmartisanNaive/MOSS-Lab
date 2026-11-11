@@ -7,6 +7,7 @@ name: Node Addon System
 
 on:
   pull_request:
+    branches: [master]
     paths:
       - '.github/workflows/node-addon-system.yml'
       - '.github/workflows/node-addon-system-release.yml'

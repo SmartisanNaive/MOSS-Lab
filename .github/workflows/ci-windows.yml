@@ -8,6 +8,7 @@ name: CI Windows
 # Python's "python checks passed".
 on:
   pull_request:
+    branches: [master]
 permissions:
   contents: read
 
