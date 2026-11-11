@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { c as tar } from 'tar'
+import { load } from 'js-yaml'
 import { downloadOfficeSidecar, runtimeNpmArchive } from './build-exe-for-python-sdk-office.ts'
 
 import { officePackageDirectories } from './libreoffice-packages.mjs'
@@ -27,6 +28,17 @@ async function fixture() {
   }
   return { root, staging, destination, packageAt }
 }
+
+it('pins Office helper deployment resolutions to archives reviewed in the workspace lock', async () => {
+  const workspace = load(await readFile(new URL('../pnpm-workspace.yaml', import.meta.url), 'utf8')) as { overrides: Record<string, string> }
+  for (const [selector, name] of [['@swc/helpers', '@swc/helpers'], ['@swc/helpers>tslib', 'tslib']] as const) {
+    const version = workspace.overrides[selector]
+    if (version === undefined) throw new Error(`Missing Office deployment pin: ${selector}`)
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/)
+    const archive = await runtimeNpmArchive(name, version)
+    expect(archive.integrity).toMatch(/^sha512-/)
+  }
+})
 
 it('locates installed target optionals and leaves other platforms and absent optionals out', async () => {
   const { staging, packageAt } = await fixture()

@@ -57,5 +57,6 @@ jobs:
           packages/client/ui-sidebar-experiment/tests/bundle.client.spec.ts
           packages/client/ui-sidebar-experiment/tests/experiment.client.spec.tsx
           packages/test-support/client-runtime/tests/assembly-test-client.client.spec.ts
+          scripts/build-exe-for-python-sdk-office.spec.ts
       - name: Test built web boot
         run: pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/built-boot.expected.e2e.ts
