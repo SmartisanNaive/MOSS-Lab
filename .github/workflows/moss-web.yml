@@ -45,6 +45,7 @@ jobs:
           cache-dependency-glob: labscriptai-ot.lock.json
       - name: Build the Linux confinement launcher
         run: |
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
           sudo apt-get update -q
           sudo apt-get install -yq musl-tools
           pnpm --dir native/system run build:native
