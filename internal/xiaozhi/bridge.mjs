@@ -16,12 +16,12 @@ const tools = [
   },
   {
     name: 'moss_delegate',
-    description: '将用户的实验需求委派给本地网页 Agent，返回任务编号和网页会话；完成后用 moss_task_status 查询。不会授权真实设备运行。',
+    description: '将实验需求委派给本地网页 Agent；若已有运行或超时任务，则把本条作为同一任务的最新要求送入同一网页会话，替代冲突的旧要求，请提供完整最新需求。返回任务编号、会话、generation 和 currentGeneration；较旧代次的返回不能覆盖最新状态，使用 moss_task_status 查询当前结果。改口不重置等待播报预算，不撤回已执行操作，不授权真实设备运行。',
     inputSchema: { type: 'object', properties: { message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务和已知实验条件。' } }, required: ['message'], additionalProperties: false },
   },
   {
     name: 'moss_task_status',
-    description: '查询小智委派任务的状态和完成后的 Agent 回复。',
+    description: '查询委派任务的机器状态和完整 result；语音必须遵守 speech：仅当 speak=true 时原样播报 text 一次，speak=false 时保持静默，不得朗读或改写 result、状态或自行追加等待提示。每任务前三次等待查询可播报，之后静默；完成只提醒一句且只一次。查询会消费播报机会，不保证设备已播出。',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string', minLength: 1, maxLength: 128 } }, required: ['jobId'], additionalProperties: false },
   },
 ]
@@ -62,7 +62,7 @@ export async function handleMessage(message, store, sessionId, delegation) {
   if (name === 'moss_delegate' || name === 'moss_task_status') {
     const key = name === 'moss_delegate' ? 'message' : 'jobId'
     if (Object.keys(args).length !== 1 || typeof args[key] !== 'string' || !args[key].trim() || args[key].length > (name === 'moss_delegate' ? 8000 : 128)) return failure(id, -32602, 'Invalid tool arguments')
-    if (!delegation) return response(id, text({ error: '委派服务不可用。' }, true))
+    if (!delegation) return response(id, text({ error: '委派服务不可用，请检查本地网页应用及桥接配置后重试。' }, true))
     try {
       return response(id, text(name === 'moss_delegate' ? await delegation.submit(args.message) : delegation.get(args.jobId)))
     } catch (error) {

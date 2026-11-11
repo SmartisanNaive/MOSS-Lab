@@ -18,6 +18,10 @@ test('tool calls are restricted to an operator-selected session and omit snapsho
     store.finishCheck({ ...task, status: 'passed', result: { private: 'secret result' } })
     const listing = await handleMessage(request(1, 'tools/list'), store, 'owner')
     assert.deepEqual(listing.result.tools.map(tool => tool.name), ['moss_status', 'moss_experiment_status', 'moss_delegate', 'moss_task_status'])
+    const speechInstructions = listing.result.tools.find(tool => tool.name === 'moss_task_status').description
+    assert.match(speechInstructions, /speak=true.*原样播报 text 一次/)
+    assert.match(speechInstructions, /speak=false.*保持静默/)
+    assert.match(speechInstructions, /不得朗读或改写 result/)
     const result = await handleMessage(request(2, 'tools/call', { name: 'moss_experiment_status', arguments: { id: experiment.id } }), store, 'owner')
     assert.equal(payload(result).revision, 1)
     assert.deepEqual(payload(result).checks, [{ name: 'simulation', status: 'passed' }])
