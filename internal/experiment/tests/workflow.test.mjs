@@ -8,15 +8,27 @@ import { createWorkflow } from '../workflow.mjs'
 import { generateTransfer } from '../transfer-template.mjs'
 
 test('rejects invalid transfer parameters before generating code', () => {
-  const valid = { source: 'A1', destinations: ['B1'], volumeUl: 50 }
+  const valid = { source: 'A1', destinations: ['B1'], volumeUl: 50, initialVolumeUl: 1000 }
   for (const parameters of [
     { ...valid, source: 'A1\"; import os' },
     { ...valid, destinations: ['A1', 'A1'] },
     { ...valid, destinations: ['I1'] },
     { ...valid, volumeUl: 201 },
     { ...valid, extra: 'x' },
+    ...[undefined, null, '1000', NaN, Infinity, -1, 0, 49, 15001].map(initialVolumeUl => ({ ...valid, initialVolumeUl })),
+    { source: 'A1', destinations: ['B1'], volumeUl: 50 },
   ]) assert.throws(() => generateTransfer(parameters), { code: 'INVALID_INPUT' })
   assert.match(generateTransfer(valid), /source\["A1"\]/)
+})
+
+test('declares the supplied initial volume before transfers and checks the total', () => {
+  const parameters = { source: 'A2', destinations: ['A1', 'B2'], volumeUl: 50, initialVolumeUl: 1234 }
+  const source = generateTransfer(parameters)
+  assert.match(source, /protocol\.define_liquid\(/)
+  assert.match(source, /source\["A2"\]\.load_liquid\(liquid=liquid, volume=1234\)/)
+  assert.ok(source.indexOf('.load_liquid(') < source.indexOf('pipette.aspirate('))
+  assert.throws(() => generateTransfer({ ...parameters, initialVolumeUl: 99 }), { code: 'INVALID_INPUT' })
+  for (const initialVolumeUl of [100, 15000]) assert.match(generateTransfer({ ...parameters, initialVolumeUl }), new RegExp(`volume=${initialVolumeUl}\\)`))
 })
 
 test('stores and analyzes the exact generated source for the current revision', async t => {
@@ -47,7 +59,7 @@ test('publishes only a current analyzed revision and rejects another session', a
   const analyzer = { analyze: () => new Promise(resolve => { complete = resolve }) }
   const workflow = createWorkflow({ store, analyzer, preview: { async prepare(value) { published.push(value) } } })
   t.after(async () => { await workflow.close(); store.close(); rmSync(dir, { recursive: true, force: true }) })
-  const parameters = { source: 'A1', destinations: ['A1', 'A2'], volumeUl: 50 }
+  const parameters = { source: 'A1', destinations: ['A1', 'A2'], volumeUl: 50, initialVolumeUl: 1000 }
   const { experiment } = workflow.create({ sessionId: 'a', creationKey: 'request', requirement: 'transfer', parameters })
   assert.throws(() => workflow.get({ sessionId: 'b', id: experiment.id }), { code: 'SESSION_MISMATCH' })
   const revision = workflow.update({ sessionId: 'a', id: experiment.id, expectedRevision: 1, requirement: 'transfer', parameters })

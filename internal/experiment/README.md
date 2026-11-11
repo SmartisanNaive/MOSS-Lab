@@ -39,6 +39,14 @@ Run the focused tests with Node 24.9 or later from the `LabScriptAI-OT-V3` appli
 node --import tsx/esm --test internal/experiment/tests/experiment.test.mjs internal/experiment/tests/plugin.test.mjs
 ```
 
+## Initial liquid declarations
+
+When `createWorkflow.create` or `update` omits `protocol`, the transfer template requires exactly `{ source: "A1", destinations: ["A1", "A2"], volumeUl: 50, initialVolumeUl: 1000 }`. `initialVolumeUl` is the caller-declared starting source volume in µL, independently supplied rather than inferred from the transfer total. It must be finite, cover `volumeUl * destinations.length`, and not exceed the reservoir well capacity of 15000 µL; invalid or missing values return `INVALID_INPUT`. The generated protocol calls `define_liquid` and the selected source well's `load_liquid` before transfers. This arithmetic check does not establish sufficient dead volume or physical readiness; the caller must account for applicable dead volume and confirm actual loading.
+
+Agent tools require complete Python source. Their optional `parameters.initialVolumeUl` records a known single-source starting volume that must match the protocol declaration; omission means unknown and must be stated as unknown in `parameters.assumptions`. Custom protocols must declare known initial liquids with `define_liquid` / `load_liquid`; an unknown volume must not be invented from transfer totals. `example_transfer.py` explicitly assumes 1000 µL of water for its 200 µL transfer total; this is an example assumption, not a measured loading.
+
+Run the declaration and tool tests with `node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs`.
+
 ## Preview components
 
 `buildPreview` requests portable documents from the pinned plugin through `protocol_artifacts` only after checking the session, revision, protocol hash, and latest analysis digest. MOSS verifies API/version/digests and copies only resulting HTML into its own private preview directory. It never imports plugin Python or rewrites viewer JavaScript. Animation and setup availability are independent; setup represents declared initial liquids, not inferred final contents.

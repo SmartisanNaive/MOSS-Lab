@@ -5,7 +5,7 @@ import SystemPrompt from '../../../packages/core/system-prompt/src/index.ts'
 import ToolsService from '../../../packages/core/tools/src/index.ts'
 import * as plugin from '../agent-tools.mjs'
 
-const parameters = { assumptions: 'sample setup' }
+const parameters = { assumptions: 'example starting volume, not measured', initialVolumeUl: 1000 }
 const protocol = 'def run(protocol):\n    pass\n'
 const session = id => ({ agent: { session: { id } } })
 
@@ -31,6 +31,12 @@ test('registers scoped experiment tools and removes them on disposal', async () 
     assert.deepEqual(Object.keys(tools).sort(), ['analyze_experiment', 'create_experiment', 'get_experiment', 'update_experiment'])
     assert.ok(ctx.tools.schemas().every(schema => !Object.hasOwn(schema.parameters.properties, 'sessionId')))
     assert.ok(Object.hasOwn(tools.update_experiment.parameters.properties, 'protocol'))
+    for (const name of ['create_experiment', 'update_experiment']) {
+      const properties = tools[name].parameters.properties
+      assert.equal(properties.parameters.properties.initialVolumeUl.type, 'number')
+      assert.match(properties.parameters.properties.initialVolumeUl.description, /Omit when unknown/)
+      assert.match(properties.protocol.description, /define_liquid and well.load_liquid/)
+    }
     const prompt = await ctx.systemPrompt.assemble()
     const guidance = prompt.sections.find(section => section.name === 'labscriptai:experiment-workflow')
     assert.match(guidance.text, /use the pinned LabscriptAI plugin through analyze_experiment/)

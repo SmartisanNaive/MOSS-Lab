@@ -10,11 +10,12 @@ const output = {
 }
 const id = { type: 'string', required: true, description: 'Experiment id returned by create_experiment.' }
 const requirement = { type: 'string', required: true, description: 'Complete experiment requirement.' }
-const protocol = { type: 'string', required: true, description: 'Complete Opentrons Flex Python protocol, including metadata and run(protocol). Use the simulation API only and do not connect to or command a robot.' }
+const protocol = { type: 'string', required: true, description: 'Complete Opentrons Flex Python protocol, including metadata and run(protocol). Declare known initial liquids with define_liquid and well.load_liquid before transfers; never substitute transfer totals for starting volumes. Mark undeclared starting volumes as unknown in assumptions. Use the simulation API only and do not connect to or command a robot.' }
 const parameters = {
   type: 'object', additionalProperties: false, required: true,
   description: 'Record the experimental setup and assumptions used to write the protocol.',
   properties: {
+    initialVolumeUl: { type: 'number', description: 'Declared initial source volume in µL for a single-source transfer. Omit when unknown and say unknown in assumptions; never infer it from transfer totals. Match the protocol load_liquid volume and cover transfers plus applicable dead volume without exceeding source capacity (15000 µL for nest_12_reservoir_15ml).' },
     assumptions: { type: 'string', required: true, description: 'Equipment, labware, positions, liquid volumes, and any assumed values requiring confirmation.' },
   },
 }

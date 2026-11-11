@@ -39,6 +39,14 @@
 node --import tsx/esm --test internal/experiment/tests/experiment.test.mjs internal/experiment/tests/plugin.test.mjs
 ```
 
+## 起始装液声明
+
+当 `createWorkflow.create` 或 `update` 省略 `protocol` 时，转移模板要求恰好提供 `{ source: "A1", destinations: ["A1", "A2"], volumeUl: 50, initialVolumeUl: 1000 }`。`initialVolumeUl` 是调用方独立声明的起始源液体积，单位为 µL，不能从转移总量推算。该值必须有限、不小于 `volumeUl * destinations.length`，且不超过储液槽单孔容量 15000 µL；缺失或无效值返回 `INVALID_INPUT`。生成的协议在转移前调用 `define_liquid` 和所选源孔的 `load_liquid`。此算术检查不代表死体积充足或设备就绪；调用方必须计入适用的死体积并核实实际装液。
+
+Agent 工具要求完整 Python 源码。可选的 `parameters.initialVolumeUl` 记录已知的单一源液起始体积，必须与协议声明一致；省略表示未知，必须在 `parameters.assumptions` 中明确标记为 unknown。自定义协议必须通过 `define_liquid` / `load_liquid` 声明已知起始液体；不能用转移总量伪造未知装液量。`example_transfer.py` 为总计 200 µL 的转移明确假设起始有 1000 µL 水；这是示例假设，并非实测装液。
+
+使用 `node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs` 运行装液声明及工具测试。
+
 ## 预览组件
 
 `buildPreview` 核对会话、实验版本、协议摘要和最新分析摘要后，通过固定版本插件的 `protocol_artifacts` 获取独立页面。MOSS 校验接口、版本和摘要，只将生成的 HTML 缓存在自己的私有预览目录；不导入插件 Python，也不改写播放器 JavaScript。动画和配置图可独立使用；配置图展示声明的起始装液，不推算终点成分。

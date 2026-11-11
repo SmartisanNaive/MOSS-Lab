@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.2/experiment-initial-liquid-volume/guide.md
+/:
+  en: cdb2c91f3926ef92
+  zh: ab5dcae716d77473
+/declare-initial-liquid-volume-for-generated-transfers:
+  en: cf9a264603242eaf
+  zh: 1b5452effb8da0c8
+/declare-initial-liquid-volume-for-generated-transfers/change:
+  en: c1e63ea35aa40489
+  zh: ee27ba6155ca897a
+/declare-initial-liquid-volume-for-generated-transfers/migration:
+  en: 8cdf9a08f409b363
+  zh: 61e3caf65fc72eda

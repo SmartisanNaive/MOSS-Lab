@@ -14,6 +14,9 @@ def run(protocol: protocol_api.ProtocolContext) -> None:
     source = protocol.load_labware("nest_12_reservoir_15ml", "B3")
     plate = protocol.load_labware("corning_96_wellplate_360ul_flat", "C3")
     pipette = protocol.load_instrument("flex_1channel_1000", "left", tip_racks=[tips])
+    # Example assumption: 1000 µL initially loaded, not the 200 µL transfer total.
+    water = protocol.define_liquid(name="Water", description="Assumed example starting liquid; confirm on site", display_color="#0088CC")
+    source["A1"].load_liquid(liquid=water, volume=1000)
     pipette.pick_up_tip()
     for well in ("A1", "A2", "A3", "A4"):
         pipette.aspirate(50, source["A1"])
