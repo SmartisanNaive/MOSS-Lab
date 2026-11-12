@@ -94,6 +94,7 @@ export interface PackageManifest {
   version?: string
   private?: boolean
   type?: string
+  packageManager?: string
   main?: string
   types?: string
   bin?: string | Record<string, string>
@@ -708,11 +709,34 @@ export function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]):
   return errors
 }
 
+/**
+ * Keep the development and bundled pnpm versions aligned with the repository launcher.
+ * @param manifests - Root and member package manifests.
+ * @returns Path-qualified errors for mismatched or missing pnpm versions.
+ */
+export function checkPnpmVersions(manifests: readonly WorkspaceManifest[]): string[] {
+  const manifest = manifests.find(entry => entry.dir === '.')?.manifest
+  const version = manifest?.devDependencies?.pnpm
+  if (!manifest || !version) return ['package.json: devDependencies.pnpm must pin the repository pnpm version']
+  const errors: string[] = []
+  if (manifest.packageManager !== `pnpm@${version}`) {
+    errors.push(`package.json: packageManager must match devDependencies.pnpm (pnpm@${version}); update both with the pnpm installation policy`)
+  }
+  for (const entry of manifests) {
+    const bundledVersion = entry.manifest.devDependencies?.pnpm
+    if (entry.dir !== '.' && bundledVersion !== undefined && bundledVersion !== version) {
+      errors.push(`${entry.dir}/package.json: devDependencies.pnpm must match the repository version ${version}, got ${bundledVersion}`)
+    }
+  }
+  return errors
+}
+
 /** Run the repository constraint gate. */
 export function main(): void {
   const manifests = readWorkspaceManifests(root)
   const errors = [
     ...checkRepositoryVersion(),
+    ...checkPnpmVersions(manifests),
     ...workspaceManifests().flatMap(checkWorkspaceManifest),
     ...checkWorkspaceProtocol(manifests),
     ...checkExperimentalNameExceptions(manifests),

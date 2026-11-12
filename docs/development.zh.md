@@ -12,7 +12,7 @@
 
 - Node.js 要求 24.9 或更高版本。CI 覆盖 24.9、最新的 24 和 26；见 [Node 引擎下限 Agent Note](../.agents/notes/implemented/process/2026-10-15-node-24-runtime-floor.zh.md)。
 - 启用 Node.js TypeScript 类型剥离。仓库构建脚本用 tsdown 的 native 配置加载器加载 `tsdown.config.ts`，因此当 `NODE_OPTIONS` 含 `--no-experimental-strip-types` 或 Node.js 构建缺少 TypeScript 支持时会失败；`pnpm run build` 会先检查这一条件并指出原因。
-- 启用了 Corepack 的 pnpm。仓库在 `package.json` 中固定使用 `pnpm@11.28.5`；如果 `pnpm --version` 无法通过 Corepack 解析，请先运行 `corepack enable`。
+- 启用了 Corepack 的 pnpm。仓库在 `package.json` 中固定使用 `pnpm@11.28.5`；如果 `pnpm --version` 无法通过 Corepack 解析，请先运行 `corepack enable`。`packageManager`、根目录和 Desktop 的 pnpm 依赖，以及 `pnpm-workspace.yaml` 中的 pnpm 安装策略必须同步更新；`pnpm run constraints` 会拒绝版本不一致。
 - Git 2.26 或更高版本；钩子设置会启用 Git 的 worktree 专属配置扩展。
 - 可选：一个 DeepSeek API key，用于 Web、headless 和 ACP（Agent Client Protocol）自动化 agent（智能体）演示以及真实 API 的 e2e 测试。
 

@@ -11,6 +11,7 @@ import {
 } from './experimental-package-policy.ts'
 import {
   checkDshFamilyVersion,
+  checkPnpmVersions,
   checkWorkspaceManifest,
   checkWorkspaceProtocol,
   checkExperimentalDependencyIsolation,
@@ -29,6 +30,44 @@ const experimental = {
     publishConfig: { access: 'public' },
   },
 } satisfies WorkspaceManifest
+
+describe('pnpm version alignment', () => {
+  const root: WorkspaceManifest = {
+    dir: '.', manifest: { packageManager: 'pnpm@11.28.5', devDependencies: { pnpm: '11.28.5' } },
+  }
+
+  it('accepts matching launcher and bundled versions alongside unrelated packages', () => {
+    expect(checkPnpmVersions([
+      root,
+      { dir: 'apps/desktop', manifest: { devDependencies: { pnpm: '11.28.5' } } },
+      { dir: 'apps/web', manifest: {} },
+    ])).toEqual([])
+  })
+
+  it('rejects an independent pnpm dependency upgrade', () => {
+    expect(checkPnpmVersions([
+      { dir: '.', manifest: { ...root.manifest, devDependencies: { pnpm: '12.12.1' } } },
+    ])).toEqual([
+      'package.json: packageManager must match devDependencies.pnpm (pnpm@12.12.1); update both with the pnpm installation policy',
+    ])
+  })
+
+  it('rejects a bundled version that differs from the repository launcher', () => {
+    expect(checkPnpmVersions([
+      root, { dir: 'apps/desktop', manifest: { devDependencies: { pnpm: '12.12.1' } } },
+    ])).toEqual([
+      'apps/desktop/package.json: devDependencies.pnpm must match the repository version 11.28.5, got 12.12.1',
+    ])
+  })
+
+  it('rejects a missing root pnpm dependency', () => {
+    for (const manifests of [[], [{ dir: '.', manifest: {} }]] satisfies WorkspaceManifest[][]) {
+      expect(checkPnpmVersions(manifests)).toEqual([
+        'package.json: devDependencies.pnpm must pin the repository pnpm version',
+      ])
+    }
+  })
+})
 
 describe('workspace dependency ranges', () => {
   const dependency = { dir: 'packages/core/runtime', manifest: { name: '@deepseek-ai/dsh-runtime' } }
