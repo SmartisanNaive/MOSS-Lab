@@ -10223,8 +10223,8 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
       chrome-devtools-frontend:
-        specifier: 1.0.1638082
-        version: 1.0.1638082
+        specifier: 1.0.1716465
+        version: 1.0.1716465
       playwright:
         specifier: ^1.49.0
         version: 1.61.1
@@ -22177,8 +22177,8 @@ packages:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
     engines: {node: '>=18'}
 
-  chrome-devtools-frontend@1.0.1638082:
-    resolution: {integrity: sha512-KfbM5kZrgseWciU9Y6ic6hDtYWKY7SY6L8jkeq23KF5CgZ1cU7P+janhysDLN+XZr6U4Ro5V+2W7YOHjKW4PAw==}
+  chrome-devtools-frontend@1.0.1716465:
+    resolution: {integrity: sha512-kNKjVtOBdDdnH+UB1dfJs87iUFtoyCZogQDyEWK2Wh1PZG/3RUfXivHMcirpWG8dy1VSvrqViz7msjOG0lnALQ==}
 
   chrome-devtools-mcp@1.9.0:
     resolution: {integrity: sha512-RnzXoJiUQ44hpOihWk90uOhLD/CnwDkDy0ldHMZONJ2nYQ+dWN1fq1luHHqyd+7FuYnyIlCY6uTThbN5ut9kSQ==}
@@ -29726,7 +29726,7 @@ snapshots:
 
   chownr@3.0.0: {}
 
-  chrome-devtools-frontend@1.0.1638082: {}
+  chrome-devtools-frontend@1.0.1716465: {}
 
   chrome-devtools-mcp@1.9.0: {}
 
