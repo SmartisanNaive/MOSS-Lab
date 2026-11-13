@@ -16,6 +16,8 @@ The same authenticated Connection carrier serves `GET /api/xiaozhi-workbench` wi
 
 This is a single-operator deployment. The Xiaozhi endpoint does not provide a verified human identity; its holder can submit work with the Web Agent's existing local permissions. Session ownership checks are not user authentication. The deployer must keep the endpoint private and avoid duplicate bridge instances.
 
+While an experiment question is open, **Continue on web** opens a reply form for that question. The form remains available while Xiaozhi reconnects. The authenticated POST accepts `replyTo` with the displayed job ID and returns 409 if a newer request already replaced it.
+
 Speech decisions limit automatic waiting acknowledgements to three per task cycle at offsets 0, 15 and 45 seconds. The voice bridge wakes a pending status query when `request_experiment_input` publishes a question. `awaitingConfirmation=true` directs the voice caller to speak the question once and wait for an answer. An explicit progress query can repeat it without spending the waiting budget. While awaiting an answer, short voice replies such as `50 microliters` or `OT-2` stay in the current session even if marked `newExperiment=true`. The bridge also accepts `newTask` as an alias. After an answer, polling the previous receipt returns `followJobId` and stays silent. Completion uses one short sentence during an active voice dialog. The hosted model controls actual speech, which requires device testing.
 
 Run focused checks from the project root with Node 24.9 or later:

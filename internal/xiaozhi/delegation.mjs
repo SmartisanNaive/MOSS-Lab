@@ -39,9 +39,12 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
   const focus = reason => { focusSequence = Math.max(focusSequence + 1, Date.now()); focusReason = reason }
   const publicJob = job => ({ jobId: job.jobId, sessionId: job.sessionId, status: job.status, result: job.result, cycleId: job.cycleId, phase: job.phase, question: job.question, preview: job.preview, supersededBy: job.supersededBy, ...(job.followJobId ? { followJobId: job.followJobId } : {}) })
 
-  async function admit(message, { newExperiment, source }) {
+  async function admit(message, { newExperiment, source, replyTo }) {
     if (closed) throw new Error('委派服务已关闭')
     const previous = latest
+    if (replyTo && (previous?.jobId !== replyTo || previous.phase !== 'needs_input' || previous.sessionId !== activeSession)) {
+      throw Object.assign(new Error('The experiment question has changed.'), { code: 'VOICE_QUESTION_CHANGED' })
+    }
     const awaitingAnswer = previous?.phase === 'needs_input' && previous.sessionId === activeSession
     if (newExperiment && source === 'xiaozhi' && awaitingAnswer && isShortExperimentAnswer(message)) newExperiment = false
     const answering = awaitingAnswer && !newExperiment
@@ -124,10 +127,10 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
   }
 
   return {
-    submit(message, { newExperiment = false, source } = {}) {
+    submit(message, { newExperiment = false, source, replyTo } = {}) {
       if (typeof newExperiment !== 'boolean') return Promise.reject(new Error('新实验标记必须为布尔值'))
       if (typeof message !== 'string' || !message.trim() || Buffer.byteLength(message) > 8000) return Promise.reject(new Error('委派内容须为不超过 8000 字节的非空文字'))
-      const operation = admission.then(() => admit(message, { newExperiment, source }))
+      const operation = admission.then(() => admit(message, { newExperiment, source, replyTo }))
       admission = operation.then(() => {}, () => {})
       return operation
     },

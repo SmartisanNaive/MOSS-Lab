@@ -95,8 +95,8 @@ async function openVoicePeer(connect: (options: object) => Bridge, store: object
 async function playable(page: Page, timeout: number) {
   const play = page.frameLocator('iframe[title="Experiment animation"]').locator('#play')
   await play.waitFor({ timeout })
-  await play.click({ timeout: 1000 })
-  await expect.poll(() => play.textContent({ timeout: 500 }), { timeout: 1000 }).toMatch(/暂停|Pause|⏸/)
+  await play.press('Enter', { timeout: 2500 })
+  await expect.poll(async () => (await play.textContent({ timeout: 2000 }).catch(() => '')) ?? '', { timeout: 4000 }).toMatch(/暂停|Pause|⏸/)
 }
 
 async function measurePreview(browser: Browser, url: string, robot: string) {
@@ -113,14 +113,14 @@ async function measurePreview(browser: Browser, url: string, robot: string) {
           if (resource === 'status' && started === undefined) started = performance.now()
           if (resource === 'setup') {
             setupRequests++
-            if (scenario === 'slow-setup') await new Promise(resolve => setTimeout(resolve, 2200))
+            if (scenario === 'slow-setup') await new Promise(resolve => setTimeout(resolve, 3200))
             if (scenario === 'failed-setup' && !retryAllowed) return route.fulfill({ status: 500, body: '' })
           }
           await route.continue()
         })
         await page.goto(url)
         let ms: number | null = null
-        try { await playable(page, 5500); assert.ok(started !== undefined); ms = Math.round(performance.now() - started) } catch (error) {
+        try { await playable(page, 9000); assert.ok(started !== undefined); ms = Math.round(performance.now() - started) } catch (error) {
           if (scenario !== 'failed-setup') await reportExperience('measurement-error', { robot, scenario, error: String(error) })
         }
         const automaticSetupRequests = setupRequests
@@ -268,6 +268,7 @@ it.each(robots)('continues one %s experiment and publishes the current checked p
     expect(accepted).toMatchObject({ status: 'running', awaitingConfirmation: true, speech: { speak: true, text: 'What final volume per well?' } })
     const question = page.getByText('What final volume per well?', { exact: true })
     await expect.poll(() => question.count(), { timeout: 12000 }).toBe(1)
+    const questionMs = Math.round(performance.now() - voiceStarted)
     await compareOrRefreshGolden(fileURLToPath(new URL('./expected/voice-workbench/needs-input.expected.md', import.meta.url)), await question.ariaSnapshot(), webSnapshotMode())
     finishQuestion?.()
     expect((await peer.call('moss_task_status', { jobId: accepted.jobId })).speech.speak).toBe(false)
@@ -283,21 +284,32 @@ it.each(robots)('continues one %s experiment and publishes the current checked p
       } catch (error) {
         if (comparison !== 'baseline') throw error
       }
-      await reportExperience('voice', { robot, receiptMs, recoveryMs })
+      await reportExperience('voice', { robot, receiptMs, questionMs, recoveryMs })
       if (recoveryMs === null) expect((await submit('50 microliters')).sessionId).toBe(first)
       else {
         await page.getByRole('textbox', { name: 'Reply to Xiaozhi experiment' }).fill('50 microliters')
         await page.getByRole('button', { name: 'Send experiment reply' }).click()
         await expect.poll(() => turns).toBe(2)
+        expect((workbench.workbench() as { sessionId: string }).sessionId).toBe(first)
       }
     } else {
       expect((await peer.call('moss_delegate', { message: '50 microliters', newExperiment: true })).sessionId).toBe(first)
     }
     await pending
-    await page.locator('[data-experiment-revision="1"]').waitFor({ timeout: 15000 })
     const animation = page.locator('iframe[title="Experiment animation"]')
+    await animation.waitFor({ timeout: 15000 })
+    await expect.poll(() => page.locator('[data-experiment-revision="1"]').count()).toBe(1)
     expect((await animation.getAttribute('srcdoc'))?.length).toBeGreaterThan(10)
     if (comparison) {
+      await playable(page, 10000)
+      await page.getByText('Download', { exact: true }).click()
+      const download = page.waitForEvent('download')
+      await page.getByRole('link', { name: 'wells.csv' }).click()
+      const file = await download
+      expect(await file.failure()).toBeNull()
+      const path = await file.path()
+      assert.ok(path)
+      expect((await readFile(path, 'utf8')).length).toBeGreaterThan(10)
       await page.close()
       await measurePreview(browser, scaffold.authenticatedUrl, robot)
       return
@@ -318,4 +330,4 @@ it.each(robots)('continues one %s experiment and publishes the current checked p
     await scaffold.close()
     await rm(temp, { recursive: true, force: true })
   }
-}, comparison ? 600_000 : undefined)
+}, comparison ? 1_200_000 : undefined)

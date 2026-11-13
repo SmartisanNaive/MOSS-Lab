@@ -8,6 +8,7 @@ import css from './Experiment.module.css'
 export function ExperimentBody({ t, useResource, useTabInfo, sessionId }: PropsLocale<'sidebarExperiment'> & PropsRuntime<'sidebar.right.pane.tab'>): ReactNode {
   const [viewMode, setViewMode] = useState<'animation' | 'setup'>('animation')
   const [generation, setGeneration] = useState(0)
+  const [retry, setRetry] = useState({ animation: 0, setup: 0 })
   const [robotGeneration, setRobotGeneration] = useState(0)
   const [demoTask, setDemoTask] = useState<string | null | undefined>(undefined)
   const { tab } = useTabInfo()
@@ -29,6 +30,9 @@ export function ExperimentBody({ t, useResource, useTabInfo, sessionId }: PropsL
   const matches = !published || current?.id === published.id && current.revision === published.revision
   const requestFailed = voiceTask?.status === 'error'
   const ready = current && !updating && !voiceUnavailable && (!requestFailed || published != null) && matches ? current : undefined
+  const documentAddress = ready ? [demo ? 'demo' : sessionId, ready.id, String(ready.revision), ready.task, viewMode].map(encodeURIComponent).join('/') : ''
+  const document = useResource<'experimentdocument'>(`dsh-resource://experimentdocument/${documentAddress}?retry=${retry[viewMode]}`)
+  const documentFailed = document.status === 'failed' || document.status === 'none' || document.value === null
   const failed = requestFailed || voiceUnavailable || resource.status === 'failed' || resource.status === 'none'
   const message = requestFailed ? `${t('voiceFailed')} ${voiceTask.result ?? ''}` : failed ? t('error')
     : needsInput ? t('voiceNeedsInput') : updating ? t('voiceWorking')
@@ -67,13 +71,16 @@ export function ExperimentBody({ t, useResource, useTabInfo, sessionId }: PropsL
       {ready && requestFailed && <div className={css.robotInfo} role="alert">{message}</div>}
       {ready && !demo && <div className={css.robotInfo} data-experiment-revision={ready.revision}>{t('revision')} {ready.revision}</div>}
       {ready
-        ? viewMode === 'setup'
-          ? ready.setupDocument === null
-            ? <div className={css.waiting} role="status">{t('setupUnavailable')}</div>
-            : <iframe key="setup" className={css.frame} title={t('setupImage')} sandbox="" srcDoc={ready.setupDocument} />
-          : ready.document === null
-            ? <div className={css.waiting} role="status">{t('previewUnavailable')}</div>
-            : <iframe key="animation" className={css.frame} title={t('title')} sandbox="allow-scripts" srcDoc={ready.document} />
+        ? document.status === 'live' && typeof document.value === 'string'
+          ? <iframe key={documentAddress} className={css.frame} title={t(viewMode === 'setup' ? 'setupImage' : 'title')}
+            sandbox={viewMode === 'setup' ? '' : 'allow-scripts'} srcDoc={document.value} />
+          : <div className={css.waiting}>
+            <div role={documentFailed ? 'alert' : 'status'}>{t(documentFailed
+              ? (viewMode === 'setup' ? 'setupLoadFailed' : 'animationLoadFailed') : 'checking')}</div>
+            {documentFailed && <Button size="sm" variant="outline" onClick={() => {
+              setRetry(value => ({ ...value, [viewMode]: value[viewMode] + 1 }))
+            }}>{t(viewMode === 'setup' ? 'retrySetup' : 'retryAnimation')}</Button>}
+          </div>
         : <div className={css.waiting}><div role={failed ? 'alert' : 'status'}>{message}</div></div>}
     </div>
   )

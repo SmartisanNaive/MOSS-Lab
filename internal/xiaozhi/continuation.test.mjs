@@ -15,9 +15,13 @@ function fixture(options = {}) {
     controller: { async create() { return {sessionId: `s${++created}`} }, async rename() {}, async prompt(input) { requests.push(input) } },
     workspaces: {list: () => [{id:'workspace'}]}, events: {on(key, fn) {listeners.set(key,fn);return () => listeners.delete(key)}}, ...options,
   })
-  return {delegation, requests, get created() {return created}, finish(reply = '请补充最终体积') {
+  const claim = () => {
     const request = requests.at(-1)
     listeners.get('agent/inbox/claimed')({agent:{id:request.sessionId},message:{source:{rpcId:request.requestId}},turn:1})
+  }
+  return {delegation, requests, claim, get created() {return created}, finish(reply = '请补充最终体积') {
+    claim()
+    const request = requests.at(-1)
     const event = listeners.get('session/event')
     event({id:request.sessionId},{type:'assistant/message',data:{turn:1,message:{content:[{type:'text',text:reply}]}}})
     event({id:request.sessionId},{type:'turn/end',data:{turn:1,reason:{kind:'completed'}}})
@@ -98,6 +102,25 @@ test('a failed binding write preserves the previous active conversation and sequ
     const next=await f.delegation.submit('continue')
     assert.equal(next.sessionId,initial.sessionId)
   } finally {f.delegation.close();rmSync(dir,{recursive:true,force:true})}
+})
+
+test('two web answers to the same displayed question can only advance the original experiment once', async () => {
+  const f = fixture()
+  const route = workbenchRoute(f.delegation)
+  const answer = jobId => route(new Request('http://localhost/api/xiaozhi-workbench/message', {
+    method: 'POST', headers: { Origin: 'http://localhost', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: '50 microliters', replyTo: jobId }),
+  }))
+  try {
+    const first = await f.delegation.submit('experiment')
+    f.claim()
+    f.delegation.captureIntent(first.sessionId).needsInput('How much?')
+    const responses = await Promise.all([answer(first.jobId), answer(first.jobId)])
+    assert.deepEqual(responses.map(response => response.status).sort(), [200, 409])
+    assert.equal((await responses.find(response => response.ok).json()).sessionId, first.sessionId)
+    assert.equal(f.requests.length, 2)
+    assert.equal(f.created, 1)
+  } finally { f.delegation.close() }
 })
 
 test('the saved and current session follows rollover even when an initial session was configured', async () => {

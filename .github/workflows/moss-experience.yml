@@ -11,7 +11,7 @@ permissions:
 jobs:
   comparison:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       DSH_TELEMETRY_DISABLED: '1'
       MOSS_TEST_REAL_OT: '1'
@@ -58,6 +58,9 @@ jobs:
             run_case candidate OT-2 "$GITHUB_WORKSPACE"
           fi
           run_case baseline OT-2 "$RUNNER_TEMP/moss-base"
+          if [[ "$GITHUB_REF_NAME" != codex/moss-experience-baseline ]]; then
+            python3 scripts/check-moss-experience.py "$RUNNER_TEMP/moss-experience" | tee "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:

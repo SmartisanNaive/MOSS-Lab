@@ -47,7 +47,8 @@ describe('voice experiment workbench', () => {
       t: (key: keyof typeof zh) => zh[key],
       useResource: (address: string) => ({ status: 'live', value: address.includes('voiceworkbench')
         ? { sequence: 2, sessionId: 'voice-session', status: updating ? 'running' : 'completed' }
-        : { status: 'ready', files: [], setupDocument: null, id: 'experiment', revision: updating ? 1 : 2, task: updating ? 'old' : 'new', document: updating ? '<p>old</p>' : '<p>four repeats</p>' } }) } as Parameters<typeof ExperimentBody>[0]
+        : address.includes('experimentdocument') ? (updating ? '<p>old</p>' : '<p>four repeats</p>')
+          : { status: 'ready', files: [], id: 'experiment', revision: updating ? 1 : 2, task: updating ? 'old' : 'new' } }) } as Parameters<typeof ExperimentBody>[0]
     const view = render(<ExperimentBody {...props} />)
     expect(view.container.querySelector('iframe')).toBeNull()
     expect(screen.getByRole('status').textContent).toBe(zh.voiceWorking)
@@ -75,7 +76,7 @@ describe('completion and preview polling order', () => {
     let status='running'
     const addresses:string[]=[]
     const props={ sessionId:'s',useTabInfo:()=>({ tab:{ id:'tab' } }),t:(key:keyof typeof zh)=>zh[key],useResource:(address:string)=>{
-      addresses.push(address)
+      if (address.includes('experimentstatus')) addresses.push(address)
       if (address.includes('voiceworkbench')) return { status:'live',value:{ sequence:2,sessionId:'s',status } }
       if (address.endsWith('/2/completed')) return { status:'loading' }
       return { status:'live',value:{ status:'ready',id:'e',revision:1,task:'old',document:'old preview' } }
@@ -96,9 +97,9 @@ describe('voice polling interruption', () => {
     const addresses: string[] = []
     const props = { sessionId: 's', useTabInfo: () => ({ tab: { id: 'tab' } }), t: (key: keyof typeof zh) => zh[key],
       useResource: (address: string) => {
-        addresses.push(address)
+        if (address.includes('experimentstatus')) addresses.push(address)
         return address.includes('voiceworkbench') ? { status, value: { sequence: 2, sessionId: 's', status: taskStatus } }
-          : { status: 'live', value: { status: 'ready', files: [], setupDocument: null, revision: 1, document: 'old preview' } }
+          : { status: 'live', value: address.includes('experimentdocument') ? 'old preview' : { status: 'ready', files: [], id: 'e', task: 'old', revision: 1 } }
       } } as Parameters<typeof ExperimentBody>[0]
     const view = render(<ExperimentBody {...props} />)
     status = 'failed'
@@ -179,7 +180,7 @@ it('shows a checked current preview as soon as its phase is ready and rejects st
   const props = { sessionId: 's', useTabInfo: () => ({ tab: { id: 'tab' } }), t: (key: keyof typeof zh) => zh[key],
     useResource: (address: string) => ({ status: 'live', value: address.includes('voiceworkbench')
       ? { sequence: 4, sessionId: 's', status: 'running', phase: 'preview_ready', preview: { id: 'e', revision: 3 } }
-      : { status: 'ready', files: [], setupDocument: null, id: 'e', revision, document: 'current three-dimensional preview' } }) } as Parameters<typeof ExperimentBody>[0]
+      : address.includes('experimentdocument') ? 'current three-dimensional preview' : { status: 'ready', files: [], id: 'e', task: 'current', revision } }) } as Parameters<typeof ExperimentBody>[0]
   const view = render(<ExperimentBody {...props} />)
   expect(view.container.querySelector('iframe')).toBeNull()
   revision = 3
@@ -209,7 +210,8 @@ it('keeps the published preview resource and iframe when the final reply arrives
     useResource: (address: string) => {
       if (address.includes('voiceworkbench')) return { status: 'live', value: { sequence: 4, sessionId: 's', status, phase: 'preview_ready', preview: { id: 'e', revision: 3 } } }
       if (address.includes('experimentstatus')) addresses.push(address)
-      return { status: 'live', value: { status: 'ready', files: [], setupDocument: null, id: 'e', revision: 3, task: 'current', document: '<p>current simulation</p>' } }
+      if (address.includes('experimentdocument')) return { status: 'live', value: '<p>current simulation</p>' }
+      return { status: 'live', value: { status: 'ready', files: [], id: 'e', revision: 3, task: 'current' } }
     } } as Parameters<typeof ExperimentBody>[0]
   const view = render(<ExperimentBody {...props} />)
   const frame = view.container.querySelector('iframe')
@@ -244,7 +246,8 @@ it('keeps demo playback separate from the current voice preview and returns to t
     useResource: (address: string) => {
       if (address.includes('voiceworkbench')) return { status: 'live', value: { sequence: 4, sessionId: 's', status, phase: 'preview_ready', preview: { id: 'e', revision: 3 } } }
       if (address.includes('experimentwatch')) return { status: 'live', value: { status: 'ready', files: [], setupDocument: null, id: 'e', revision: 3, task: 'current' } }
-      addresses.push(address)
+      if (address.includes('experimentstatus')) addresses.push(address)
+      if (address.includes('experimentdocument')) return { status: 'live', value: address.includes('/demo/') ? '<p>demo simulation</p>' : '<p>real plan</p>' }
       return { status: 'live', value: address.includes('mode=demo')
         ? { status: 'ready', files: [], setupDocument: null, id: 'demo', revision: 1, task: 'demo', document: '<p>demo simulation</p>' }
         : { status: 'ready', files: [], setupDocument: null, id: 'e', revision: 3, task: 'current', document: '<p>real plan</p>' } }
@@ -298,7 +301,8 @@ it.each([zh, en])('retains the current checked preview if only its final reply i
     useResource: (address: string) => {
       if (address.includes('voiceworkbench')) return { status: 'live', value: { sequence: 4, sessionId: 's', status, phase, result: '本次生成已停止', preview: { id: 'e', revision: 3 } } }
       if (address.includes('experimentstatus')) addresses.push(address)
-      return { status: 'live', value: { status: 'ready', files: [], setupDocument: null, id: 'e', revision: 3, task: 'current', document: '<p>checked preview</p>' } }
+      if (address.includes('experimentdocument')) return { status: 'live', value: '<p>checked preview</p>' }
+      return { status: 'live', value: { status: 'ready', files: [], id: 'e', revision: 3, task: 'current' } }
     } } as Parameters<typeof ExperimentBody>[0]
   const view = render(<ExperimentBody {...props} />)
   const frame = view.container.querySelector('iframe')

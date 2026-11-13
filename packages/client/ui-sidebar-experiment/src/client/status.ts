@@ -1,14 +1,15 @@
 import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { fetchPreviewBundle } from './bundle.ts'
+import { fetchPreviewDocument } from './bundle.ts'
 
 /** Status returned by the experiment preview service. */
-export type ExperimentStatus = { readonly status: 'waiting' | 'checking' } | { readonly status: 'ready'; readonly id: string; readonly revision: number; readonly task: string; readonly document: string | null; readonly setupDocument: string | null; readonly files: readonly string[] }
+export type ExperimentStatus = { readonly status: 'waiting' | 'checking' } | Ready & { readonly files: readonly string[] }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap {
     /** Current checked-experiment preview status. */
     experimentstatus: ExperimentStatus
+    experimentdocument: string | null
     /** Preview identity for automatic session navigation. */
     experimentwatch: { readonly status: 'waiting' | 'checking' } | Ready
     /** One on-demand, read-only robot status query. */
@@ -110,7 +111,6 @@ export const watchProvider: ResourceProvider<'experimentwatch'> = {
 export const statusProvider: ResourceProvider<'experimentstatus'> = {
   protocol: 'experimentstatus',
   async *open(address, { signal }) {
-    let previous: Ready | undefined
     let active = false
     while (!signal.aborted) {
       try {
@@ -128,23 +128,9 @@ export const statusProvider: ResourceProvider<'experimentstatus'> = {
         const status = parseStatus(value)
         if (status === undefined) throw new Error('Invalid status response')
         active = status.status === 'checking'
-        if (status.status !== 'ready') {
-          previous = undefined
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- cancellation can occur while a request is awaited.
-          if (!signal.aborted) yield { ok: true, value: status }
-        } else if (previous?.id !== status.id || previous.revision !== status.revision || previous.task !== status.task) {
-          previous = undefined
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- cancellation can occur while a request is awaited.
-          if (!signal.aborted) yield { ok: true, value: { status: 'checking' } }
-          const bundle = await fetchPreviewBundle(session, status.id, status.revision, status.task, signal, endpoint)
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- cancellation can occur while a request is awaited.
-          if (!signal.aborted) {
-            previous = status
-            yield { ok: true, value: { ...status, ...bundle } }
-          }
-        }
+        const files = status.status === 'ready' ? readFiles(value) : []
+        if (!signal.aborted) yield { ok: true, value: status.status === 'ready' ? { ...status, files } : status }
       } catch {
-        previous = undefined
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- cancellation can occur while a request is awaited.
         if (!signal.aborted) yield {
           ok: false,
@@ -152,6 +138,34 @@ export const statusProvider: ResourceProvider<'experimentstatus'> = {
         }
       }
       await delay(signal, active ? 1000 : 5000)
+    }
+  },
+}
+
+function readFiles(value: unknown): string[] {
+  const files = typeof value === 'object' && value !== null && 'files' in value ? value.files : []
+  if (!Array.isArray(files) || files.length > 64) throw new Error('Invalid preview files')
+  return (files as readonly unknown[]).map((entry) => {
+    if (typeof entry !== 'object' || entry === null || !('name' in entry)
+      || typeof entry.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.name)) throw new Error('Invalid preview filename')
+    return entry.name
+  })
+}
+
+/** Load the selected document for one session and checked task. */
+export const documentProvider: ResourceProvider<'experimentdocument'> = {
+  protocol: 'experimentdocument',
+  async *open(address, { signal }) {
+    const url = new URL(address)
+    const [session, id, revision, task, view] = url.pathname.slice(1).split('/').map(decodeURIComponent)
+    if (!session || !id || !task || (view !== 'animation' && view !== 'setup')) return
+    const endpoint = session === 'demo' ? 'api/experiment-demo' : 'api/experiment-preview'
+    try {
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)])
+      const document = await fetchPreviewDocument(session, id, Number(revision), task, view, deadline, endpoint)
+      if (!signal.aborted) yield { ok: true, value: document }
+    } catch {
+      if (!signal.aborted) yield { ok: false, error: new RemoteError('experiment/status-unavailable', 'Preview document is unavailable.', {}) }
     }
   },
 }
@@ -166,6 +180,7 @@ export type VoiceWorkbenchStatus = {
   readonly phase?: string
   readonly question?: string | null
   readonly preview?: { readonly id: string; readonly revision: number } | null
+  readonly connection?: { readonly status: string }
 }
 
 /** Observe the voice task without creating a second conversation or model turn. */
@@ -184,7 +199,7 @@ export const voiceWorkbenchProvider: ResourceProvider<'voiceworkbench'> = {
       } catch {
         if (isActive(signal)) yield { ok: false, error: new RemoteError('experiment/status-unavailable', 'Voice task is unavailable.', {}) }
       }
-      await delay(signal, active ? 1000 : 3000)
+      await delay(signal, active ? 500 : 1000)
     }
   },
 }
@@ -199,6 +214,8 @@ function isVoiceWorkbenchStatus(value: unknown): value is VoiceWorkbenchStatus {
     && (!('focusSequence' in value) || Number.isSafeInteger(value.focusSequence) && Number(value.focusSequence) >= 0)
     && (!('phase' in value) || typeof value.phase === 'string')
     && (!('question' in value) || value.question === null || typeof value.question === 'string')
+    && (!('connection' in value) || typeof value.connection === 'object' && value.connection !== null
+      && 'status' in value.connection && typeof value.connection.status === 'string')
     && (!('preview' in value) || value.preview === null || typeof value.preview === 'object' && value.preview !== null && 'id' in value.preview && typeof value.preview.id === 'string' && 'revision' in value.preview && Number.isSafeInteger(value.preview.revision) && Number(value.preview.revision) > 0)
 }
 

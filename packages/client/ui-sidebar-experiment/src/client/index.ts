@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { ExperimentBody, ExperimentTitle } from './Experiment.tsx'
 import { en, zh, ja, es, fr, de, ru, pt } from './locales.ts'
-import { robotStatusProvider, statusProvider, watchProvider, voiceWorkbenchProvider } from './status.ts'
+import { documentProvider, robotStatusProvider, statusProvider, watchProvider, voiceWorkbenchProvider } from './status.ts'
 import { AutoOpenExperiment, createAutoOpenStore } from './auto-open.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
@@ -26,16 +26,26 @@ export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'r
 export function apply(ctx: Context): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.resources.register(statusProvider), 'ui-sidebar-experiment.status')
+  ctx.effect(() => ctx.resources.register(documentProvider), 'ui-sidebar-experiment.document')
   ctx.effect(() => ctx.resources.register(watchProvider), 'ui-sidebar-experiment.watch')
   ctx.effect(() => ctx.resources.register(robotStatusProvider), 'ui-sidebar-experiment.robot-status')
   ctx.effect(() => ctx.resources.register(voiceWorkbenchProvider), 'ui-sidebar-experiment.voice-status')
   const voiceStore = createVoiceNavigationStore()
   ctx.effect(() => ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay', id: `${ID}.voice`, store: voiceStore, locale: NS,
-    inject: () => ({ navigate: async (id: string, signal: AbortSignal) => {
-      await ctx.sessions.refresh()
-      if (!signal.aborted) ctx.uiWorkspace.openSession(SessionId(id))
-    } }),
+    inject: () => ({
+      navigate: async (id: string, signal: AbortSignal) => {
+        await ctx.sessions.refresh()
+        if (!signal.aborted) ctx.uiWorkspace.openSession(SessionId(id))
+      },
+      reply: async (jobId: string, message: string) => {
+        const response = await fetch('api/xiaozhi-workbench/message', {
+          method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ message, replyTo: jobId }), signal: AbortSignal.timeout(15000),
+        })
+        return response.ok ? 'accepted' as const : response.status === 409 ? 'changed' as const : 'failed' as const
+      },
+    }),
   }, VoiceWorkbench)), 'ui-sidebar-experiment.voice-navigation')
   const autoOpenStore = createAutoOpenStore()
   ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({

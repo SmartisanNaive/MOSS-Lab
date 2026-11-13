@@ -21,10 +21,13 @@ export function workbenchRoute(delegation) {
       }
       const text = Buffer.concat(chunks).toString('utf8')
       const body = JSON.parse(text)
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['message', 'newExperiment'].includes(key))) throw new Error('请求参数无效')
-      return Response.json(await delegation.submit(body.message, { newExperiment: body.newExperiment === undefined ? false : body.newExperiment }), { headers })
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['message', 'newExperiment', 'replyTo'].includes(key))) throw new Error('请求参数无效')
+      const { message, newExperiment = false, replyTo } = body
+      if (replyTo !== undefined && (typeof replyTo !== 'string' || !replyTo || replyTo.length > 128 || newExperiment !== false)) throw new Error('请求参数无效')
+      return Response.json(await delegation.submit(message, { newExperiment, replyTo }), { headers })
     } catch (error) {
-      return Response.json({ error: String(error.message).slice(0, 300) }, { status: 400, headers })
+      const status = error.code === 'VOICE_QUESTION_CHANGED' ? 409 : 400
+      return Response.json({ error: String(error.message).slice(0, 300) }, { status, headers })
     }
   }
 }

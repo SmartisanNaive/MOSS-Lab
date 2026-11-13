@@ -138,8 +138,9 @@ describe('experiment animation entry', () => {
     const useResource = ((address: string) => {
       addresses.push(address)
       if (address.startsWith('dsh-resource://experimentwatch/')) return { status: 'live', value: { status: 'waiting' }, failure: undefined }
+      if (address.startsWith('dsh-resource://experimentdocument/demo/')) return { status: 'live', value: '<p>demo</p>', failure: undefined }
       return address.includes('mode=demo')
-        ? { status: 'live', value: { status: 'ready', id: 'demo', revision: 1, task: 'task', document: '<p>demo</p>', setupDocument: null, files: [] }, failure: undefined }
+        ? { status: 'live', value: { status: 'ready', id: 'demo', revision: 1, task: 'task', files: [] }, failure: undefined }
         : { status: 'live', value: { status: 'waiting' }, failure: undefined }
     }) as UseResource
     const props = { sessionId: 'session', useTabInfo: () => ({ tab: { id: 'tab' } }), useResource } as PropsRuntime<'sidebar.right.pane.tab'>
@@ -160,6 +161,7 @@ describe('experiment animation entry', () => {
     let task: string | undefined = 'old-task'
     const useResource = ((address: string) => {
       if (address.startsWith('dsh-resource://experimentwatch/')) return { status: 'live', value: task ? { status: 'ready', id: 'x', revision: 1, task } : { status: 'waiting' }, failure: undefined }
+      if (address.startsWith('dsh-resource://experimentdocument/demo/')) return { status: 'live', value: '<p>demo</p>', failure: undefined }
       return address.includes('mode=demo')
         ? { status: 'live', value: { status: 'ready', id: 'demo', revision: 1, task: 'demo', document: '<p>demo</p>', setupDocument: null, files: [] }, failure: undefined }
         : { status: 'live', value: { status: 'waiting' }, failure: undefined }
@@ -178,7 +180,9 @@ describe('experiment animation entry', () => {
   })
 
   it('renders an opaque sandbox when resources are ready', () => {
-    const useResource = (() => ({ status: 'live', value: { status: 'ready', id: 'x', revision: 2, task: 't', document: '<p>viewer</p>', setupDocument: '<p>setup</p>', files: ['wells.csv'] }, failure: undefined })) as UseResource
+    const useResource = ((address: string) => ({ status: 'live', value: address.includes('experimentdocument')
+      ? address.includes('/setup?') ? '<p>setup</p>' : '<p>viewer</p>'
+      : { status: 'ready', id: 'x', revision: 2, task: 't', files: ['wells.csv'] }, failure: undefined })) as UseResource
     const props = { sessionId: 'session', useTabInfo: () => ({ tab: { id: 'tab' } }), useResource } as PropsRuntime<'sidebar.right.pane.tab'>
     const view = render(<ExperimentBody {...props} t={key => key} />)
     const frame = view.container.querySelector('iframe')!
@@ -227,7 +231,7 @@ describe('experiment animation entry', () => {
       await iterator.next()
       const next = iterator.next()
       await vi.advanceTimersByTimeAsync(5000)
-      expect((await next).value).toEqual({ ok: true, value: { status: 'checking' } })
+      expect((await next).value).toEqual({ ok: true, value: { status: 'ready', id: 'x', revision: 2, task: 'next', files: [] } })
     } finally {
       controller.abort()
       await iterator.return?.()
