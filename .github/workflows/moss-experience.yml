@@ -1,0 +1,65 @@
+name: MOSS experience comparison
+
+on:
+  push:
+    branches: [codex/moss-experience-baseline, codex/moss-experience]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      MOSS_TEST_REAL_OT: '1'
+      MOSS_EXPERIENCE_SAMPLES: '30'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v7
+      - name: Install Linux confinement tools
+        run: sudo apt-get update -q && sudo apt-get install -yq musl-tools
+      - name: Prepare the same browser and test script for both versions
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
+          pnpm run build
+          pnpm --dir native/system run build:native
+          git worktree add --detach "$RUNNER_TEMP/moss-base" 4a05d9ef4c1ec601555c22ae76cff688f1278d90
+          cp apps/web/tests/voice-workbench.e2e.ts "$RUNNER_TEMP/moss-base/apps/web/tests/voice-workbench.e2e.ts"
+          cd "$RUNNER_TEMP/moss-base"
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm --dir native/system run build:native
+      - name: Compare the experiment experience
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/moss-experience"
+          run_case() {
+            local version="$1" robot="$2" path="$3"
+            (cd "$path" && MOSS_EXPERIENCE_COMPARE="$version" MOSS_EXPERIENCE_ROBOT="$robot" \
+              MOSS_EXPERIENCE_REPORT="$RUNNER_TEMP/moss-experience/$version-$robot.jsonl" \
+              pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/voice-workbench.e2e.ts) \
+              | tee "$RUNNER_TEMP/moss-experience/$version-$robot.log"
+          }
+          run_case baseline Flex "$RUNNER_TEMP/moss-base"
+          if [[ "$GITHUB_REF_NAME" != codex/moss-experience-baseline ]]; then
+            run_case candidate Flex "$GITHUB_WORKSPACE"
+            run_case candidate OT-2 "$GITHUB_WORKSPACE"
+          fi
+          run_case baseline OT-2 "$RUNNER_TEMP/moss-base"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: moss-experience
+          path: ${{ runner.temp }}/moss-experience

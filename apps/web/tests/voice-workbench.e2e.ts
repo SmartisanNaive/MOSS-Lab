@@ -1,11 +1,13 @@
 /** Voice continuation and checked previews through the authenticated Web surface. */
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium, type Browser, type Page } from 'playwright'
 import { expect, it } from 'vitest'
+import WebSocket, { WebSocketServer } from 'ws'
 import { compareOrRefreshGolden, launchWebScaffold, seedSession, webSnapshotMode } from './scaffold.ts'
 
 type AnalysisTools = {
@@ -49,6 +51,96 @@ type VoiceReply = {
   awaitingConfirmation: boolean
   speech: { speak: boolean; text: string }
 }
+type Bridge = (() => Promise<void>) & { snapshot(): { status: string } }
+const comparison = process.env.MOSS_EXPERIENCE_COMPARE
+const samples = Number(process.env.MOSS_EXPERIENCE_SAMPLES ?? '30')
+
+async function reportExperience(kind: string, data: object) {
+  const path = process.env.MOSS_EXPERIENCE_REPORT
+  if (path) await appendFile(path, JSON.stringify({ kind, version: comparison, ...data }) + '\n')
+}
+
+async function openVoicePeer(connect: (options: object) => Bridge, store: object, delegation: object) {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await once(server, 'listening')
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string')
+  const url = `ws://127.0.0.1:${address.port}`
+  class LoopbackSocket extends WebSocket {
+    constructor(_url: string, options: WebSocket.ClientOptions) { super(url, options) }
+  }
+  const connected = once(server, 'connection')
+  const bridge = connect({ url: 'wss://test.invalid', sessionId: null, store, delegation, WebSocketClass: LoopbackSocket,
+    reconnectMinMs: 60000, reconnectMaxMs: 60000 })
+  const [socket] = await connected as [WebSocket]
+  let id = 0
+  async function request(method: string, params?: object) {
+    const reply = once(socket, 'message')
+    socket.send(JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }))
+    const [data] = await reply as [Buffer]
+    return JSON.parse(data.toString()) as { result: { content: [{ text: string }] } }
+  }
+  await request('tools/list')
+  return {
+    snapshot: bridge.snapshot,
+    async call(name: string, args: object) {
+      const reply = await request('tools/call', { name, arguments: args })
+      return JSON.parse(reply.result.content[0].text) as VoiceReply
+    },
+    async disconnect() { socket.terminate(); await expect.poll(() => bridge.snapshot().status).toBe('retrying') },
+    async close() { await bridge(); await new Promise<void>(resolve => server.close(() => resolve())) },
+  }
+}
+
+async function playable(page: Page, timeout: number) {
+  const play = page.frameLocator('iframe[title="Experiment animation"]').locator('#play')
+  await play.waitFor({ timeout })
+  await play.click({ timeout: 1000 })
+  await expect.poll(() => play.textContent({ timeout: 500 }), { timeout: 1000 }).toMatch(/暂停|Pause|⏸/)
+}
+
+async function measurePreview(browser: Browser, url: string, robot: string) {
+  const results: { scenario: string; ms: number | null; setupRequests: number; retryMs: number | null }[] = []
+  for (let index = -1; index < samples; index++) {
+    for (const scenario of index % 2 === 0 ? ['normal', 'slow-setup', 'failed-setup'] : ['failed-setup', 'slow-setup', 'normal']) {
+      const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
+      let started: number | undefined
+      let setupRequests = 0
+      let retryAllowed = false
+      try {
+        await page.route('**/api/experiment-preview?**', async (route) => {
+          const resource = new URL(route.request().url()).searchParams.get('resource')
+          if (resource === 'status' && started === undefined) started = performance.now()
+          if (resource === 'setup') {
+            setupRequests++
+            if (scenario === 'slow-setup') await new Promise(resolve => setTimeout(resolve, 2200))
+            if (scenario === 'failed-setup' && !retryAllowed) return route.fulfill({ status: 500, body: '' })
+          }
+          await route.continue()
+        })
+        await page.goto(url)
+        let ms: number | null = null
+        try { await playable(page, 5500); assert.ok(started !== undefined); ms = Math.round(performance.now() - started) } catch (error) {
+          if (scenario !== 'failed-setup') await reportExperience('measurement-error', { robot, scenario, error: String(error) })
+        }
+        const automaticSetupRequests = setupRequests
+        let retryMs: number | null = null
+        if (scenario === 'failed-setup' && ms !== null) {
+          await page.getByRole('button', { name: 'Setup image', exact: true }).click()
+          const retry = page.getByRole('button', { name: 'Retry setup image' })
+          await retry.waitFor({ timeout: 6000 })
+          retryAllowed = true
+          const startRetry = performance.now()
+          await retry.click()
+          await page.locator('iframe[title="Setup image"]').waitFor({ timeout: 6000 })
+          retryMs = Math.round(performance.now() - startRetry)
+        }
+        if (index >= 0) results.push({ scenario, ms, setupRequests: automaticSetupRequests, retryMs })
+      } finally { await page.close() }
+    }
+  }
+  await reportExperience('preview', { robot, samples: results })
+}
 async function experimentModule(name: string): Promise<Record<string, unknown>> {
   return import(/* @vite-ignore */ new URL(`../../../internal/experiment/${name}`, import.meta.url).href)
 }
@@ -56,7 +148,8 @@ async function voiceModule(name: string): Promise<Record<string, unknown>> {
   return import(/* @vite-ignore */ new URL(`../../../internal/xiaozhi/${name}`, import.meta.url).href)
 }
 
-it('continues one experiment in the workbench, publishes the current checked preview, and opens a new experiment explicitly', async () => {
+const robots = comparison ? [process.env.MOSS_EXPERIENCE_ROBOT ?? 'Flex'] : ['Flex']
+it.each(robots)('continues one %s experiment and publishes the current checked preview', async (robot) => {
   const scaffold = await launchWebScaffold()
   const temp = await mkdtemp(join(tmpdir(), 'moss-browser-'))
   const browser = await chromium.launch()
@@ -71,7 +164,7 @@ it('continues one experiment in the workbench, publishes the current checked pre
     const { apply: applyAgentTools } = await experimentModule('agent-tools.mjs') as { apply: (ctx: object) => void }
     const { createDelegation } = await voiceModule('delegation.mjs') as { createDelegation: (options: object) => Voice }
     const { createVoiceFeedback } = await voiceModule('voice-feedback.mjs') as { createVoiceFeedback: (options: object) => VoiceFeedback }
-    const { handleMessage } = await voiceModule('bridge.mjs') as { handleMessage: (message: object, store: object, sessionId: null, delegation: object) => Promise<{ result: { content: [{ text: string }] } }> }
+    const { connectBridge } = await voiceModule('bridge.mjs') as { connectBridge: (options: object) => Bridge }
     const { registerWorkbench } = await voiceModule('workbench-route.mjs') as { registerWorkbench: (connection: object, delegation: object) => () => Promise<void> }
     const saved = await readFile(new URL('../../../snapshots/web/fresh-round-trip/session.v4.jsonl', import.meta.url), 'utf8')
     const first = await seedSession(scaffold, saved, 'voice-workbench-session')
@@ -107,7 +200,8 @@ it('continues one experiment in the workbench, publishes the current checked pre
     let pending: Promise<unknown> = Promise.resolve()
     let finishQuestion: (() => void) | undefined
     let askExperimentInput: AskExperimentInput | undefined
-    const protocol = await readFile(new URL('../../../internal/experiment/example_transfer.py', import.meta.url), 'utf8')
+    const protocolPath = robot === 'Flex' ? 'example_transfer.py' : 'tests/example_ot2_transfer.py'
+    const protocol = await readFile(new URL(`../../../internal/experiment/${protocolPath}`, import.meta.url), 'utf8')
     voice = createDelegation({
       bindingPath: join(temp, 'voice.json'),
       workspaces: { list: () => [{ id: 'workspace' }] },
@@ -151,13 +245,12 @@ it('continues one experiment in the workbench, publishes the current checked pre
     })
     const feedback = createVoiceFeedback({ delegation: voice, offsetsMs: [0, 15000, 45000], pollWaitMs: 1000 })
     disposers.push(() => feedback.close())
-    const callVoice = async (name: string, args: object) => {
-      assert.ok(store)
-      const request = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }
-      const reply = await handleMessage(request, store, null, { ...voice, voiceReceipt: feedback.receipt, voiceStatus: feedback.status })
-      return JSON.parse(reply.result.content[0].text) as VoiceReply
-    }
-    disposers.push(registerWorkbench(connection, voice))
+    const peer = await openVoicePeer(connectBridge, store, { ...voice, voiceReceipt: feedback.receipt, voiceStatus: feedback.status })
+    disposers.push(peer.close)
+    const workbench = voice as Voice & { workbench: () => object }
+    disposers.push(registerWorkbench(connection, {
+      ...voice, workbench: () => ({ ...workbench.workbench(), connection: peer.snapshot() }),
+    }))
     const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
     await page.goto(scaffold.authenticatedUrl)
     const submit = async (message: string, newExperiment = false) => {
@@ -168,19 +261,47 @@ it('continues one experiment in the workbench, publishes the current checked pre
       expect(response.ok).toBe(true)
       return response.json() as Promise<{ sessionId: string }>
     }
-    const accepted = await callVoice('moss_delegate', { message: 'Start a Flex experiment' })
+    const voiceStarted = performance.now()
+    const accepted = await peer.call('moss_delegate', { message: `Start a ${robot} experiment` })
+    const receiptMs = Math.round(performance.now() - voiceStarted)
     expect(accepted.sessionId).toBe(first)
     expect(accepted).toMatchObject({ status: 'running', awaitingConfirmation: true, speech: { speak: true, text: 'What final volume per well?' } })
     const question = page.getByText('What final volume per well?', { exact: true })
     await expect.poll(() => question.count(), { timeout: 12000 }).toBe(1)
     await compareOrRefreshGolden(fileURLToPath(new URL('./expected/voice-workbench/needs-input.expected.md', import.meta.url)), await question.ariaSnapshot(), webSnapshotMode())
     finishQuestion?.()
-    expect((await callVoice('moss_task_status', { jobId: accepted.jobId })).speech.speak).toBe(false)
-    expect((await callVoice('moss_delegate', { message: '50 microliters', newExperiment: true })).sessionId).toBe(first)
+    expect((await peer.call('moss_task_status', { jobId: accepted.jobId })).speech.speak).toBe(false)
+    if (comparison) {
+      await peer.disconnect()
+      const disconnected = performance.now()
+      const resume = page.getByRole('button', { name: 'Continue on web', exact: true })
+      let recoveryMs: number | null = null
+      try {
+        await resume.waitFor({ timeout: 3800 })
+        await resume.click()
+        recoveryMs = Math.round(performance.now() - disconnected)
+      } catch (error) {
+        if (comparison !== 'baseline') throw error
+      }
+      await reportExperience('voice', { robot, receiptMs, recoveryMs })
+      if (recoveryMs === null) expect((await submit('50 microliters')).sessionId).toBe(first)
+      else {
+        await page.getByRole('textbox', { name: 'Reply to Xiaozhi experiment' }).fill('50 microliters')
+        await page.getByRole('button', { name: 'Send experiment reply' }).click()
+        await expect.poll(() => turns).toBe(2)
+      }
+    } else {
+      expect((await peer.call('moss_delegate', { message: '50 microliters', newExperiment: true })).sessionId).toBe(first)
+    }
     await pending
-    await expect.poll(() => page.locator('[data-experiment-revision="1"]').count(), { timeout: 15000 }).toBe(1)
+    await page.locator('[data-experiment-revision="1"]').waitFor({ timeout: 15000 })
     const animation = page.locator('iframe[title="Experiment animation"]')
     expect((await animation.getAttribute('srcdoc'))?.length).toBeGreaterThan(10)
+    if (comparison) {
+      await page.close()
+      await measurePreview(browser, scaffold.authenticatedUrl, robot)
+      return
+    }
     await page.getByRole('button', { name: 'Setup image', exact: true }).click()
     await expect.poll(() => page.locator('iframe[title="Setup image"]').count()).toBe(1)
     expect((await submit('Change it to 40 microliters')).sessionId).toBe(first)
@@ -197,4 +318,4 @@ it('continues one experiment in the workbench, publishes the current checked pre
     await scaffold.close()
     await rm(temp, { recursive: true, force: true })
   }
-})
+}, comparison ? 600_000 : undefined)
