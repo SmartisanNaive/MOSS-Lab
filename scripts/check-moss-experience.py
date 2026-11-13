@@ -30,6 +30,7 @@ def main(directory):
     print("| Robot | Browser scenario | Baseline median / P90 / failures | Candidate median / P90 / failures |")
     print("| --- | --- | --- | --- |")
     failures = []
+    voice = []
     for robot in ("Flex", "OT-2"):
         baseline = load(directory, "baseline", robot)
         candidate = load(directory, "candidate", robot)
@@ -50,6 +51,13 @@ def main(directory):
             failures.append(f"{robot}: setup retry failed")
         if candidate["voice"]["recoveryMs"] is None:
             failures.append(f"{robot}: browser continuation after voice disconnect failed")
+        retries = [row["retryMs"] for row in new_rows if row["retryMs"] is not None]
+        voice.append((robot, baseline["voice"], candidate["voice"], round(statistics.median(retries)) if retries else None))
+    print("\n| Robot | Voice receipt before → after (ms) | Web question before → after (ms) | Web recovery before → after (ms) | Setup retry median (ms) |")
+    print("| --- | --- | --- | --- | --- |")
+    for robot, before, after, retry in voice:
+        transitions = " | ".join(f"{before[key]} → {after[key]}" for key in ("receiptMs", "questionMs", "recoveryMs"))
+        print(f"| {robot} | {transitions} | {retry} |")
     if failures:
         raise SystemExit("\n".join(failures))
 

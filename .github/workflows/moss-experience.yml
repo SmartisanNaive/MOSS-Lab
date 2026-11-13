@@ -8,10 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: moss-experience-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   comparison:
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 65
     env:
       DSH_TELEMETRY_DISABLED: '1'
       MOSS_TEST_REAL_OT: '1'

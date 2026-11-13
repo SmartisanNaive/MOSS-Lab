@@ -161,8 +161,7 @@ export const documentProvider: ResourceProvider<'experimentdocument'> = {
     if (!session || !id || !task || (view !== 'animation' && view !== 'setup')) return
     const endpoint = session === 'demo' ? 'api/experiment-demo' : 'api/experiment-preview'
     try {
-      const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)])
-      const document = await fetchPreviewDocument(session, id, Number(revision), task, view, deadline, endpoint)
+      const document = await fetchPreviewDocument(session, id, Number(revision), task, view, signal, endpoint)
       if (!signal.aborted) yield { ok: true, value: document }
     } catch {
       if (!signal.aborted) yield { ok: false, error: new RemoteError('experiment/status-unavailable', 'Preview document is unavailable.', {}) }
