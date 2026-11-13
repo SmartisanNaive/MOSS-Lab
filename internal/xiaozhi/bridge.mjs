@@ -16,13 +16,29 @@ const tools = [
   },
   {
     name: 'moss_delegate',
-    description: '将用户的实验需求委派给本地网页 Agent，返回任务编号和网页会话；完成后用 moss_task_status 查询。不会授权真实设备运行。',
-    inputSchema: { type: 'object', properties: { message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务和已知实验条件。' } }, required: ['message'], additionalProperties: false },
+    description: '把用户原话交给本地网页实验助手。已在处理或刚结束的任务默认继续同一网页会话；生成中改口也立即提交，最新要求覆盖旧要求。只有用户明确要求另开新实验时才设 newTask=true；实验助手等待确认时，即使误设 true，只要原话没有明确新实验也会作为回答继续。实验助手追问确认时，把用户回答再次交给此工具即可继续同一实验。返回任务编号、会话、generation 和 currentGeneration；稍后用 moss_task_status 查询。不会授权真实设备运行。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务、补充条件或对确认的回答。' },
+        newTask: { type: 'boolean', description: '仅当用户明确要求另开新实验时为 true；补充、改口和回答确认都保持 false。' },
+      },
+      required: ['message'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'moss_task_status',
-    description: '查询小智委派任务的状态和完成后的 Agent 回复。',
-    inputSchema: { type: 'object', properties: { jobId: { type: 'string', minLength: 1, maxLength: 128 } }, required: ['jobId'], additionalProperties: false },
+    description: '查询任务状态、待确认问题和播报决策。语音只按 speech.text 播报一次；speak=false 时保持静默，不要朗读或概述 result。awaitingConfirmation=true 时 speech.text 是实验助手等待用户回答的问题，用户回答后再次调用 moss_delegate（newTask=false）继续同一会话。只有用户明确询问进度时才设 userQuery=true；若返回 followJobId，改查该任务以获取同一实验的最新回执。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'string', minLength: 1, maxLength: 128 },
+        userQuery: { type: 'boolean', description: '只有用户明确询问当前进度才为 true；自动观察保持 false。' },
+      },
+      required: ['jobId'],
+      additionalProperties: false,
+    },
   },
 ]
 
@@ -61,20 +77,27 @@ export async function handleMessage(message, store, sessionId, delegation) {
   }
   if (name === 'moss_delegate' || name === 'moss_task_status') {
     const key = name === 'moss_delegate' ? 'message' : 'jobId'
-    if (Object.keys(args).length !== 1 || typeof args[key] !== 'string' || !args[key].trim() || args[key].length > (name === 'moss_delegate' ? 8000 : 128)) return failure(id, -32602, 'Invalid tool arguments')
+    const allowed = name === 'moss_delegate' ? ['message', 'newTask'] : ['jobId', 'userQuery']
+    const booleanKey = name === 'moss_delegate' ? 'newTask' : 'userQuery'
+    if (Object.keys(args).some(argument => !allowed.includes(argument))
+      || typeof args[key] !== 'string' || !args[key].trim() || args[key].length > (name === 'moss_delegate' ? 8000 : 128)
+      || (args[booleanKey] !== undefined && typeof args[booleanKey] !== 'boolean')) return failure(id, -32602, 'Invalid tool arguments')
     if (!delegation) return response(id, text({ error: '委派服务不可用。' }, true))
     try {
-      return response(id, text(name === 'moss_delegate' ? await delegation.submit(args.message) : delegation.get(args.jobId)))
+      return response(id, text(name === 'moss_delegate'
+        ? await delegation.submit(args.message, { newTask: args.newTask ?? false })
+        : delegation.get(args.jobId, { userQuery: args.userQuery ?? false })))
     } catch (error) {
       return response(id, text({ error: String(error.message).slice(0, 300) }, true))
     }
   }
   if (name !== 'moss_experiment_status') return failure(id, -32602, 'Unknown tool')
   if (Object.keys(args).length !== 1 || typeof args.id !== 'string' || !args.id.trim() || args.id.length > 128) return failure(id, -32602, 'Invalid tool arguments')
-  if (sessionId === null) return response(id, text({ error: '尚未绑定网页实验会话。' }, true))
+  const currentSession = delegation?.activeSessionId?.() ?? sessionId
+  if (currentSession === null) return response(id, text({ error: '尚未绑定网页实验会话。' }, true))
   try {
-    const experiment = await store.getForSession(sessionId, args.id)
-    const checks = await store.getChecksForSession(sessionId, args.id, experiment.revision)
+    const experiment = await store.getForSession(currentSession, args.id)
+    const checks = await store.getChecksForSession(currentSession, args.id, experiment.revision)
     const latest = new Map()
     for (const check of checks) latest.set(check.name, check.status)
     return response(id, text({ id: experiment.id, revision: experiment.revision, created_at: experiment.createdAt, checks: [...latest].slice(-20).map(([name, status]) => ({ name: String(name).slice(0, 100), status })), note: '检查记录由本地存储提供，不表示真机就绪。' }))

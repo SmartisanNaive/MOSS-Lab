@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.2/xiaozhi-continuation/guide.md
+/:
+  en: 13b74ec09306eb87
+  zh: d54e67156cfdda69
+/xiaozhi-experiment-continuity:
+  en: 22048a5594e0aa24
+  zh: cd92e728ed791dfa
+/xiaozhi-experiment-continuity/change:
+  en: e90cc38382dfe8ba
+  zh: ac33c5c6395b043a
+/xiaozhi-experiment-continuity/migration:
+  en: fcdbd8684e80b66c
+  zh: 4127d3a016572de0

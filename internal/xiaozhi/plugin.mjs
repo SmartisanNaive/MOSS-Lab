@@ -22,7 +22,7 @@ export function apply(ctx, config) {
       throw new Error('xiaozhi-readonly could not read the project root .env')
     }
     if (!endpoint) throw new Error('xiaozhi-readonly requires XIAOZHI_WSS_URL in the project root .env')
-    const delegation = createDelegation({ controller: ctx.sessionController, workspaces: ctx.workspaceRegistry, events: ctx })
+    const delegation = createDelegation({ controller: ctx.sessionController, workspaces: ctx.workspaceRegistry, events: ctx, sessionId: config.sessionId })
     const disconnect = connectBridge({ url: endpoint, sessionId: config.sessionId, store: ctx.experimentStore, delegation })
     return () => { disconnect(); delegation.close() }
   }, 'xiaozhi-readonly.connection')
