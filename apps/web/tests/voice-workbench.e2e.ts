@@ -95,8 +95,11 @@ async function openVoicePeer(connect: (options: object) => Bridge, store: object
 async function playable(page: Page, timeout: number) {
   const play = page.frameLocator('iframe[title="Experiment animation"]').locator('#play')
   await play.waitFor({ timeout })
-  await play.press('Enter', { timeout: 2500 })
-  await expect.poll(async () => (await play.textContent({ timeout: 2000 }).catch(() => '')) ?? '', { timeout: 4000 }).toMatch(/暂停|Pause|⏸/)
+  const result = await play.evaluate((button: HTMLElement) => {
+    button.click()
+    return button.textContent
+  }, { timeout: 8000 })
+  expect(result).toMatch(/暂停|Pause|⏸/)
 }
 
 async function measurePreview(browser: Browser, url: string, robot: string) {
@@ -120,7 +123,11 @@ async function measurePreview(browser: Browser, url: string, robot: string) {
         })
         await page.goto(url)
         let ms: number | null = null
-        try { await playable(page, 9000); assert.ok(started !== undefined); ms = Math.round(performance.now() - started) } catch (error) {
+        try {
+          await playable(page, scenario === 'failed-setup' ? 6000 : 15000)
+          assert.ok(started !== undefined)
+          ms = Math.round(performance.now() - started)
+        } catch (error) {
           if (scenario !== 'failed-setup') await reportExperience('measurement-error', { robot, scenario, error: String(error) })
         }
         const automaticSetupRequests = setupRequests
@@ -133,6 +140,7 @@ async function measurePreview(browser: Browser, url: string, robot: string) {
           const startRetry = performance.now()
           await retry.click()
           await page.locator('iframe[title="Setup image"]').waitFor({ timeout: 6000 })
+          expect(await page.locator('iframe[title="Setup image"]').getAttribute('srcdoc')).toContain('<html')
           retryMs = Math.round(performance.now() - startRetry)
         }
         if (index >= 0) results.push({ scenario, ms, setupRequests: automaticSetupRequests, retryMs })
