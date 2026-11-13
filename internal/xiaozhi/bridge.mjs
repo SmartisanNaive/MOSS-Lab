@@ -18,12 +18,12 @@ const tools = [
   },
   {
     name: 'moss_delegate',
-    description: '把用户原话交给电脑上的当前实验助手。生成中改口也立即提交，最新要求覆盖旧要求；不要要求用户等旧任务结束。仅明确新实验时设newExperiment=true。严格按返回的speech.speak/text播报一次，然后持续调用moss_task_status观察最新任务；speech.speak=false时保持安静，禁止重复说还在等。最多3次等待提示，完成只简短播报一次；不表示真机实验完成。',
-    inputSchema: { type: 'object', properties: { newExperiment: { type: 'boolean', description: '仅当用户明确要求另开新实验时为 true，普通补充和修改保持 false。' }, message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务和已知实验条件。' } }, required: ['message'], additionalProperties: false },
+    description: '把用户原话交给电脑上的当前实验助手。生成中改口也立即提交，最新要求覆盖旧要求。用户回答实验问题时继续同一实验，仅明确另开实验才设 newExperiment=true。按 speech.speak/text 播报一次。awaitingConfirmation=true 时等待用户回答，再调用本工具；否则继续查询最新任务。',
+    inputSchema: { type: 'object', properties: { newExperiment: { type: 'boolean', description: '仅当用户明确要求另开新实验时为 true，普通补充和修改保持 false。' }, newTask: { type: 'boolean', description: '兼容旧调用方的别名。新调用使用 newExperiment。' }, message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务和已知实验条件。' } }, required: ['message'], additionalProperties: false },
   },
   {
     name: 'moss_task_status',
-    description: '持续观察MOSS任务。只在speech.speak=true时朗读speech.text一次；false时不要说等待、处理中或任何同义句，静默继续查询。遇followJobId改查最新任务。用户改口可立即moss_delegate。completed/error后停止自动查询，只说指定短句，不读JSON或复述方案。仅用户主动问进度时userQuery=true。',
+    description: '持续观察 MOSS 任务。只在 speech.speak=true 时朗读 speech.text 一次，否则保持安静。遇 followJobId 改查最新任务。awaitingConfirmation=true 时停止自动查询并等待用户回答，再调用 moss_delegate。completed/error 后停止自动查询。仅用户主动问进度时设 userQuery=true。',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string', minLength: 1, maxLength: 128 }, userQuery: { type: 'boolean', description: '只有用户明确询问当前进度才为true，自动观察必须false。' } }, required: ['jobId'], additionalProperties: false },
   },
 ]
@@ -78,13 +78,14 @@ export async function handleMessage(message, store, sessionId, delegation, conte
   if (name === 'moss_delegate' || name === 'moss_task_status') {
     const submitting = name === 'moss_delegate'
     const [key, flag, limit] = submitting ? ['message', 'newExperiment', 8000] : ['jobId', 'userQuery', 128]
-    if (Object.keys(args).some(arg => arg !== key && arg !== flag) ||
+    if (Object.keys(args).some(arg => arg !== key && arg !== flag && !(submitting && arg === 'newTask')) ||
       (args[flag] !== undefined && typeof args[flag] !== 'boolean') ||
+      (submitting && args.newTask !== undefined && (typeof args.newTask !== 'boolean' || (args.newExperiment !== undefined && args.newExperiment !== args.newTask))) ||
       typeof args[key] !== 'string' || !args[key].trim() || args[key].length > limit) return failure(id, -32602, 'Invalid tool arguments')
     if (!delegation) return response(id, text({ error: '委派服务不可用。' }, true))
     try {
       if (submitting) {
-        const accepted = await delegation.submit(args.message, { newExperiment: args.newExperiment ?? false })
+        const accepted = await delegation.submit(args.message, { newExperiment: args.newExperiment ?? args.newTask ?? false, source: 'xiaozhi' })
         return response(id, text(delegation.voiceReceipt ? { ...accepted, ...delegation.voiceReceipt(accepted.jobId) } : accepted))
       }
       return response(id, text(delegation.voiceStatus ? await delegation.voiceStatus(args.jobId, { userQuery: args.userQuery ?? false, signal: context.signal }) : delegation.get(args.jobId)))

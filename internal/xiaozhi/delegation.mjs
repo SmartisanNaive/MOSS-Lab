@@ -2,6 +2,11 @@ import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 
 import { randomUUID } from 'node:crypto'
 
 const active = job => job && ['running', 'timeout'].includes(job.status)
+function isShortExperimentAnswer(message) {
+  const answer = message.trim().replace(/[，,]\s*继续(?:这个)?实验[。.!！]?$/, '')
+  if (/^(?:是|对|好|可以|确认|不用|不需要|yes|no|Flex|OT-2)[。.!！]?$/i.test(answer)) return true
+  return /^(?:每孔\s*)?(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十百千点半]+)\s*(?:微升|毫升|次|个|孔|组|秒|分钟|度|μl|µl|ul|ml|microlit(?:er|re)s?|millilit(?:er|re)s?|times?|repeats?)?[。.!！]?$/i.test(answer)
+}
 
 /** Reject work based on voice requirements that were superseded or not admitted yet. */
 export class VoiceIntentError extends Error {
@@ -32,11 +37,14 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
   }
   const changed = () => { for (const listener of subscribers) { try { listener() } catch { console.warn('xiaozhi task observer failed') } } }
   const focus = reason => { focusSequence = Math.max(focusSequence + 1, Date.now()); focusReason = reason }
-  const publicJob = job => ({ jobId: job.jobId, sessionId: job.sessionId, status: job.status, result: job.result, cycleId: job.cycleId, phase: job.phase, question: job.question, preview: job.preview, supersededBy: job.supersededBy })
+  const publicJob = job => ({ jobId: job.jobId, sessionId: job.sessionId, status: job.status, result: job.result, cycleId: job.cycleId, phase: job.phase, question: job.question, preview: job.preview, supersededBy: job.supersededBy, ...(job.followJobId ? { followJobId: job.followJobId } : {}) })
 
-  async function admit(message, newExperiment) {
+  async function admit(message, { newExperiment, source }) {
     if (closed) throw new Error('委派服务已关闭')
     const previous = latest
+    const awaitingAnswer = previous?.phase === 'needs_input' && previous.sessionId === activeSession
+    if (newExperiment && source === 'xiaozhi' && awaitingAnswer && isShortExperimentAnswer(message)) newExperiment = false
+    const answering = awaitingAnswer && !newExperiment
     const replacing = active(previous)
     if (jobs.size >= 100) jobs.delete(jobs.keys().next().value)
     const jobId = randomUUID()
@@ -74,6 +82,7 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
         previous.finish('superseded', '已按最新要求继续，旧任务不再作为当前结果。')
         if (newExperiment && previous.sessionId !== job.sessionId) await cancelSession(previous.sessionId)
       }
+      if (awaitingAnswer && previous.jobId && previous.status !== 'superseded') previous.followJobId = jobId
       const requestId = randomUUID()
       job.requestId = requestId
       let turn, finalText = ''
@@ -90,7 +99,7 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
           if (Array.isArray(content)) finalText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').slice(0, 4000)
         }
         if (event.type === 'turn/end') {
-          if (event.data.reason?.kind === 'completed' && finalText.trim()) finish('completed', finalText)
+          if (event.data.reason?.kind === 'completed' && (finalText.trim() || job.phase === 'needs_input')) finish('completed', finalText.trim() ? finalText : job.question)
           else finish('error', event.data.reason?.kind === 'aborted' ? '本次生成已停止' : '生成未完成，请查看对话中的说明')
         }
       }, { global: true })
@@ -98,8 +107,10 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
       if (!presented || newExperiment) { presented = true; focus(newExperiment ? 'new_experiment' : 'first_open') }
       changed()
       promptStarted = true
-      const latestNote = replacing && !newExperiment ? '\n这是最新补充；以此覆盖此前相冲突的要求。沿用同一实验ID，读取当前版本后按最新要求更新并重新分析。' : ''
-      await controller.prompt({ sessionId: job.sessionId, requestId, mode: replacing && !newExperiment ? 'steer' : 'queue', content: [{ type: 'text', text: '来自小智的委派：\n' + message + latestNote }] }, new AbortController().signal)
+      const latestNote = answering ? '\n这是对刚才实验问题的回复。沿用同一会话和实验，按回复继续。'
+        : replacing && !newExperiment ? '\n这是最新补充；以此覆盖此前相冲突的要求。沿用同一实验ID，读取当前版本后按最新要求更新并重新分析。' : ''
+      const mode = replacing && !newExperiment && !answering ? 'steer' : 'queue'
+      await controller.prompt({ sessionId: job.sessionId, requestId, mode, content: [{ type: 'text', text: '来自小智的委派：\n' + message + latestNote }] }, new AbortController().signal)
       return { jobId, sessionId: job.sessionId, status: job.status, note: observationClosed ? '服务已停止观察，任务可能仍在网页中运行。' : '任务已接受，等待期间可以直接补充或修改要求。' }
     } catch (error) {
       if (promptStarted) {
@@ -113,10 +124,10 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
   }
 
   return {
-    submit(message, { newExperiment = false } = {}) {
+    submit(message, { newExperiment = false, source } = {}) {
       if (typeof newExperiment !== 'boolean') return Promise.reject(new Error('新实验标记必须为布尔值'))
       if (typeof message !== 'string' || !message.trim() || Buffer.byteLength(message) > 8000) return Promise.reject(new Error('委派内容须为不超过 8000 字节的非空文字'))
-      const operation = admission.then(() => admit(message, newExperiment))
+      const operation = admission.then(() => admit(message, { newExperiment, source }))
       admission = operation.then(() => {}, () => {})
       return operation
     },

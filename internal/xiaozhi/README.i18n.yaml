@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write internal/xiaozhi/README.md
 /xiaozhi-mcp-bridge:
-  en: 343a57e90e62222f
-  zh: 053118d62e7cef9b
+  en: 7c1bdb76743d08cd
+  zh: 8c945a7b55648775

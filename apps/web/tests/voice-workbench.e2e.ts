@@ -33,8 +33,21 @@ type Workflow = {
   close(): Promise<void>
 }
 type Voice = {
-  captureIntent(id: string): { needsInput(question: string): void }
+  captureIntent(id: string): { assertCurrent(): void }
   close(): void
+}
+type AskExperimentInput = (args: { question: string }, exec: { agent: { session: { id: string } } }) => Promise<unknown>
+type VoiceFeedback = {
+  receipt(id: string): object
+  status(id: string, options: { userQuery: boolean; signal?: AbortSignal }): Promise<object>
+  close(): void
+}
+type VoiceReply = {
+  sessionId: string
+  jobId: string
+  status: string
+  awaitingConfirmation: boolean
+  speech: { speak: boolean; text: string }
 }
 async function experimentModule(name: string): Promise<Record<string, unknown>> {
   return import(/* @vite-ignore */ new URL(`../../../internal/experiment/${name}`, import.meta.url).href)
@@ -55,7 +68,10 @@ it('continues one experiment in the workbench, publishes the current checked pre
     const { ExperimentStore } = await experimentModule('index.mjs') as { ExperimentStore: new (options: { path: string; create: boolean }) => ExperimentStore }
     const { createWorkflow } = await experimentModule('workflow.mjs') as { createWorkflow: (options: object) => Workflow }
     const { apply } = await experimentModule('preview-plugin.mjs') as { apply: (ctx: object, config: object) => void }
+    const { apply: applyAgentTools } = await experimentModule('agent-tools.mjs') as { apply: (ctx: object) => void }
     const { createDelegation } = await voiceModule('delegation.mjs') as { createDelegation: (options: object) => Voice }
+    const { createVoiceFeedback } = await voiceModule('voice-feedback.mjs') as { createVoiceFeedback: (options: object) => VoiceFeedback }
+    const { handleMessage } = await voiceModule('bridge.mjs') as { handleMessage: (message: object, store: object, sessionId: null, delegation: object) => Promise<{ result: { content: [{ text: string }] } }> }
     const { registerWorkbench } = await voiceModule('workbench-route.mjs') as { registerWorkbench: (connection: object, delegation: object) => () => Promise<void> }
     const saved = await readFile(new URL('../../../snapshots/web/fresh-round-trip/session.v4.jsonl', import.meta.url), 'utf8')
     const first = await seedSession(scaffold, saved, 'voice-workbench-session')
@@ -89,6 +105,8 @@ it('continues one experiment in the workbench, publishes the current checked pre
     let nextSession = 0
     let experiment: string | undefined
     let pending: Promise<unknown> = Promise.resolve()
+    let finishQuestion: (() => void) | undefined
+    let askExperimentInput: AskExperimentInput | undefined
     const protocol = await readFile(new URL('../../../internal/experiment/example_transfer.py', import.meta.url), 'utf8')
     voice = createDelegation({
       bindingPath: join(temp, 'voice.json'),
@@ -108,8 +126,9 @@ it('continues one experiment in the workbench, publishes the current checked pre
             handlers.get('session/event')?.({ id: sessionId }, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
           }
           if (turn === 1) {
-            voice?.captureIntent(sessionId).needsInput('What final volume per well?')
-            finish()
+            assert.ok(askExperimentInput)
+            await askExperimentInput({ question: 'What final volume per well?' }, { agent: { session: { id: sessionId } } })
+            finishQuestion = finish
           } else if (turn === 2 || turn === 3) {
             const current = workflow
             assert.ok(current)
@@ -123,6 +142,21 @@ it('continues one experiment in the workbench, publishes the current checked pre
     services.set('mossVoiceIntent', voice)
     workflow = createWorkflow({ store, analyzer: runtime, preview, captureIntent: (id: string) => voice?.captureIntent(id) })
     services.set('experimentWorkflow', workflow)
+    applyAgentTools({
+      effect: () => {},
+      get: (key: string) => services.get(key),
+      tools: { register: (tool: { name: string; execute: AskExperimentInput }) => {
+        if (tool.name === 'request_experiment_input') askExperimentInput = tool.execute
+      } },
+    })
+    const feedback = createVoiceFeedback({ delegation: voice, offsetsMs: [0, 15000, 45000], pollWaitMs: 1000 })
+    disposers.push(() => feedback.close())
+    const callVoice = async (name: string, args: object) => {
+      assert.ok(store)
+      const request = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }
+      const reply = await handleMessage(request, store, null, { ...voice, voiceReceipt: feedback.receipt, voiceStatus: feedback.status })
+      return JSON.parse(reply.result.content[0].text) as VoiceReply
+    }
     disposers.push(registerWorkbench(connection, voice))
     const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
     await page.goto(scaffold.authenticatedUrl)
@@ -134,11 +168,15 @@ it('continues one experiment in the workbench, publishes the current checked pre
       expect(response.ok).toBe(true)
       return response.json() as Promise<{ sessionId: string }>
     }
-    expect((await submit('Start a Flex experiment')).sessionId).toBe(first)
+    const accepted = await callVoice('moss_delegate', { message: 'Start a Flex experiment' })
+    expect(accepted.sessionId).toBe(first)
+    expect(accepted).toMatchObject({ status: 'running', awaitingConfirmation: true, speech: { speak: true, text: 'What final volume per well?' } })
     const question = page.getByText('What final volume per well?', { exact: true })
     await expect.poll(() => question.count(), { timeout: 12000 }).toBe(1)
     await compareOrRefreshGolden(fileURLToPath(new URL('./expected/voice-workbench/needs-input.expected.md', import.meta.url)), await question.ariaSnapshot(), webSnapshotMode())
-    expect((await submit('50 microliters')).sessionId).toBe(first)
+    finishQuestion?.()
+    expect((await callVoice('moss_task_status', { jobId: accepted.jobId })).speech.speak).toBe(false)
+    expect((await callVoice('moss_delegate', { message: '50 microliters', newExperiment: true })).sessionId).toBe(first)
     await pending
     await expect.poll(() => page.locator('[data-experiment-revision="1"]').count(), { timeout: 15000 }).toBe(1)
     const animation = page.locator('iframe[title="Experiment animation"]')

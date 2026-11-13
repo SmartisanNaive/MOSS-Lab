@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createDelegation } from './delegation.mjs'
 import { createVoiceFeedback } from './voice-feedback.mjs'
+import { handleMessage } from './bridge.mjs'
 
 function fixture() {
   const handlers = new Map(), requests = [], removed = []
@@ -139,17 +140,62 @@ test('cancelling a status watch removes its subscription without cancelling the 
 
 test('a clarification focuses once and finishes as needs_input rather than a preview completion', async () => {
   const f = fixture()
-  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 1 })
+  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 10000 })
   try {
     const accepted = await f.delegation.submit('missing conditions'); f.claim(0)
+    assert.equal(feedback.receipt(accepted.jobId).speech.waitingCount, 1)
+    const firstPoll = feedback.status(accepted.jobId)
+    const concurrentPoll = feedback.status(accepted.jobId)
     const initialFocus = f.delegation.workbench().focusSequence
     assert.equal(f.delegation.captureIntent(accepted.sessionId).needsInput('每孔最终体积是多少？'), true)
     const confirmationFocus = f.delegation.workbench().focusSequence
     assert.ok(confirmationFocus > initialFocus)
+    const [heard, silent] = await Promise.all([firstPoll, concurrentPoll])
+    assert.equal(heard.status, 'running')
+    assert.equal(heard.awaitingConfirmation, true)
+    assert.equal(heard.speech.text, '每孔最终体积是多少？')
+    assert.equal(heard.speech.waitingCount, 1)
+    assert.equal(silent.speech.speak, false)
     f.delegation.captureIntent(accepted.sessionId).needsInput('每孔最终体积是多少？')
     assert.equal(f.delegation.workbench().focusSequence, confirmationFocus)
     f.end(0, '每孔最终体积是多少？')
-    assert.equal((await feedback.status(accepted.jobId)).speech.text, '每孔最终体积是多少？')
+    assert.equal((await feedback.status(accepted.jobId)).speech.speak, false)
+    assert.equal((await feedback.status(accepted.jobId, { userQuery: true })).speech.text, '每孔最终体积是多少？')
+  } finally { feedback.close(); f.delegation.close() }
+})
+
+test('voice answers follow the original experiment even when the caller sets the new-task flag', async () => {
+  const f = fixture()
+  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 1 })
+  const delegation = { ...f.delegation, voiceReceipt: feedback.receipt, voiceStatus: feedback.status }
+  const request = (name, args) => handleMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, {}, null, delegation)
+  const call = async (name, args) => JSON.parse((await request(name, args)).result.content[0].text)
+  try {
+    const first = await call('moss_delegate', { message: '设计一个实验' })
+    f.claim(0)
+    f.delegation.captureIntent(first.sessionId).needsInput('每孔最终体积是多少？')
+    const early = await call('moss_delegate', { message: '50 微升', newExperiment: true })
+    assert.equal(early.sessionId, first.sessionId)
+    assert.equal(f.requests[1].mode, 'queue')
+    assert.equal((await call('moss_task_status', { jobId: first.jobId })).followJobId, early.jobId)
+    f.claim(1, 2)
+    f.delegation.captureIntent(early.sessionId).needsInput('重复几次？')
+    f.end(1, '', 2)
+    assert.equal((await call('moss_task_status', { jobId: early.jobId })).status, 'completed')
+    const conflict = await request('moss_delegate', { message: '50 微升', newExperiment: true, newTask: false })
+    assert.equal(conflict.error.code, -32602)
+    const next = await call('moss_delegate', { message: '三次，继续这个实验', newTask: true })
+    assert.equal(next.sessionId, first.sessionId)
+    assert.match(f.requests[2].content[0].text, /对刚才实验问题的回复/)
+    const previous = await call('moss_task_status', { jobId: early.jobId })
+    assert.equal(previous.followJobId, next.jobId)
+    assert.equal(previous.awaitingConfirmation, false)
+    assert.equal(previous.speech.speak, false)
+    f.claim(2, 3)
+    f.delegation.captureIntent(next.sessionId).needsInput('用哪种移液器？')
+    const fresh = await call('moss_delegate', { message: '另外开一个实验，研究温度对反应速率的影响', newExperiment: true })
+    assert.notEqual(fresh.sessionId, next.sessionId)
+    assert.equal(f.created, 2)
   } finally { feedback.close(); f.delegation.close() }
 })
 
