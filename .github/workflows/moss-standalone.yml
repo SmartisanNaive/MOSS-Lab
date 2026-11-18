@@ -77,7 +77,57 @@ jobs:
           OPENTRONS_URL=""
           MOSS_ALLOW_LIVE_ROBOT="0"
           '@ | Set-Content (Join-Path $env:MOSS_HOME '.env') -Encoding utf8NoBOM
-          & $python -m moss_lab check --port 0 --timeout 1800
+          @'
+          import http.cookiejar, json, os, pathlib, queue, re, subprocess, sys, threading, time, urllib.parse, urllib.request
+          child = subprocess.Popen([sys.executable, '-m', 'moss_lab', 'start', '--no-open', '--port', '0', '--timeout', '1800'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
+          lines = queue.Queue()
+          def read_output():
+              for line in child.stdout:
+                  lines.put(line)
+              lines.put(None)
+          reader = threading.Thread(target=read_output, daemon=True)
+          reader.start()
+          try:
+              deadline = time.monotonic() + 1900
+              url = None
+              while time.monotonic() < deadline:
+                  try: line = lines.get(timeout=1)
+                  except queue.Empty: continue
+                  if line is None: raise RuntimeError('Standalone application exited before readiness')
+                  match = re.search(r'MOSS [\d.]+ ready\. (http[^\s]+)', line)
+                  if match:
+                      url = match[1]
+                      break
+              if url is None: raise RuntimeError('Standalone startup timed out')
+              opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+              with opener.open(url, timeout=30) as response:
+                  assert b'<html' in response.read().lower()
+              origin = urllib.parse.urlsplit(url)
+              def get(parameters):
+                  address = urllib.parse.urlunsplit((origin.scheme, origin.netloc, '/api/experiment-demo', urllib.parse.urlencode(parameters), ''))
+                  with opener.open(address, timeout=300) as response: return response.read()
+              status = json.loads(get({'resource': 'status'}))
+              assert status['status'] == 'ready', status
+              common = {key: status[key] for key in ['id', 'revision', 'task']}
+              common['session'] = 'demo'
+              for name in ['animation', 'setup']:
+                  assert b'<html' in get({**common, 'resource': name}).lower()
+              names = {file['name'] for file in status['files']}
+              assert {'setup.png', 'setup.json', 'wells.csv'} <= names
+              for name in ['setup.png', 'setup.json', 'wells.csv']:
+                  content = get({**common, 'resource': 'file', 'file': name})
+                  assert len(content) > 20
+                  if name.endswith('.png'): assert content.startswith(b'\x89PNG\r\n\x1a\n')
+                  if name.endswith('.json'): assert json.loads(content)['state'] == 'declared_initial'
+              pathlib.Path(os.environ['RUNNER_TEMP'], 'moss-demo.json').write_text(json.dumps({'simulation': 'PASS', 'documents': ['animation', 'setup'], 'files': sorted(names)}), encoding='utf-8')
+          finally:
+              if child.poll() is None: child.terminate()
+              child.wait(timeout=15)
+              reader.join(timeout=15)
+              assert not reader.is_alive(), 'Standalone application descendants still hold the output pipe'
+              child.stdout.close()
+          '@ | Set-Content (Join-Path $env:RUNNER_TEMP 'check-standalone.py') -Encoding utf8NoBOM
+          & $python (Join-Path $env:RUNNER_TEMP 'check-standalone.py')
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           if ($env:MOSS_PUBLIC_VERSION) {
             & $python -m moss_lab update --port 0 --timeout 1800
@@ -85,7 +135,8 @@ jobs:
           }
           & $python -m moss_lab status
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $result = @{ platform = 'win32'; sourceCheckout = $false; externalNode = $false; externalUv = $false; artifactRun = $env:MOSS_ARTIFACT_RUN; publicVersion = $env:MOSS_PUBLIC_VERSION; status = 'PASS' }
+          $demo = Get-Content (Join-Path $env:RUNNER_TEMP 'moss-demo.json') -Raw | ConvertFrom-Json
+          $result = @{ platform = 'win32'; sourceCheckout = $false; externalNode = $false; externalUv = $false; demo = $demo; artifactRun = $env:MOSS_ARTIFACT_RUN; publicVersion = $env:MOSS_PUBLIC_VERSION; status = 'PASS' }
           $result | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'moss-standalone.json') -Encoding utf8NoBOM
       - uses: actions/upload-artifact@v4
         with:
