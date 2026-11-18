@@ -125,7 +125,22 @@ try:
         shutil.copy2(Path(distribution.locate_file('moss_lab/recovery.py')), recovery)
         atomic_json(home / 'package-update.json', {'schema': 1, 'wheel': cached.relative_to(home).as_posix(),
             'wheel_sha256': digest(cached), 'backup': backup.relative_to(home).as_posix(),
-            'site_packages': str(site_packages)})
+            'site_packages': str(site_packages), 'writer': 'fixture-transaction'})
+        # The exact kernel lock held inside pip must outlive its parent coordinator.
+        writer = subprocess.Popen([sys.executable, '-c',
+            "from pathlib import Path;from moss_lab.recovery import file_lock;import sys\nwith file_lock(Path(sys.argv[1])):print('locked',flush=True);sys.stdin.read()", str(home / 'pip-writer.lock')],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            assert writer.stdout.readline().strip() == 'locked'
+            busy = subprocess.run([sys.executable, str(recovery), '--stopped'], capture_output=True, timeout=30)
+            assert busy.returncode != 0
+            assert (home / 'package-update.json').is_file()
+            assert data_hashes(home) == original_hashes
+        finally:
+            writer.stdin.close()
+            writer.wait(timeout=15)
+            writer.stdout.close()
+        results.append({'task': 'active-pip-writer-blocks-external-recovery', 'status': 'PASS'})
         (home / '.env').write_text('INTERRUPTED=1')
         (home / '.dsh-local/new-during-pip.txt').write_text('retain interrupted data')
         Path(distribution.locate_file('moss_lab/cli.py')).unlink()
@@ -134,6 +149,8 @@ try:
         failed = run('status', success=False)
         assert 'recover-install.py' in failed.stderr
         subprocess.run([sys.executable, str(recovery), '--stopped'], check=True, capture_output=True, timeout=120)
+        delayed = subprocess.run([sys.executable, str(recovery), '--install-wheel', str(original), '--writer-token', 'fixture-transaction'], capture_output=True, timeout=30)
+        assert delayed.returncode != 0, 'A delayed pip writer must refuse a completed recovery'
         assert package_version() == '0.1.0'
         assert data_hashes(home) == original_hashes
         assert list((home / 'backups').glob('retained-pip-*/.dsh-local/new-during-pip.txt'))

@@ -41,8 +41,10 @@ const proxy=createServer({key:readFileSync(privateKey),cert:readFileSync(certifi
 })
 await new Promise(accept=>proxy.listen(0,'127.0.0.1',accept))
 writeFileSync(join(home,'.env'),`AI_API_URL="https://127.0.0.1:${proxy.address().port}/chat/completions"\nAI_MODEL="${process.env.MOSS_TEST_MODEL||'deepseek-v4-flash'}"\nAI_API_KEY="loopback-placeholder"\nXIAOZHI_WSS_URL=""\nOPENTRONS_URL=""\nMOSS_ALLOW_LIVE_ROBOT="0"\n`,{mode:0o600})
+const applicationEnv={...process.env}
+for(const name of Object.keys(applicationEnv))if(/KEY|TOKEN|SECRET|PASSWORD/.test(name)||['AI_API_URL','AI_MODEL','XIAOZHI_WSS_URL','OPENTRONS_URL'].includes(name))delete applicationEnv[name]
 const child=spawn(python,['-m','moss_lab','--home',home,'start','--no-open','--port','0','--timeout','1800'],{
- env:{...process.env,MOSS_INSTALL_API_KEY:'',NODE_EXTRA_CA_CERTS:certificate,MOSS_ALLOW_LIVE_ROBOT:'0'},stdio:['ignore','pipe','pipe']})
+ env:{...applicationEnv,NODE_EXTRA_CA_CERTS:certificate,MOSS_ALLOW_LIVE_ROBOT:'0'},stdio:['ignore','pipe','pipe']})
 let output='';child.stdout.on('data',v=>output+=v);child.stderr.on('data',v=>output+=v)
 const exited=new Promise(accept=>child.on('exit',accept))
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
