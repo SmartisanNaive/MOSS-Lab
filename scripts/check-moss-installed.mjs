@@ -64,14 +64,24 @@ function state(session){
  return {experiments,ends:events.filter(e=>e.type==='turn/end')}
 }
 async function send(page,text){await page.locator('[data-composer-input][contenteditable="true"]').last().fill(text);const start=Date.now();await page.getByRole('button',{name:/^(发送消息|Send message)$/}).click();return start}
-function checked(session,minimumRevision,turns){
+function checked(session,minimumRevision,turns,maximumRevision){
  const current=state(session);assert.ok(current.experiments.length<=1)
+ const experiment=current.experiments[0]
+ if(experiment&&(experiment.revision>maximumRevision||experiment.failures.length>1))throw new Error('Basic experiment exceeded one corrective analysis attempt')
  // A tool error can be repaired in the same model turn; judge its completed result.
  if(current.ends.length<turns)return null
- const experiment=current.experiments[0]
  if(!experiment||experiment.revision<minimumRevision)throw new Error('Completed task did not produce the requested experiment revision')
  if(experiment.check?.status!=='passed')throw new Error('Completed task has no passed analysis: '+JSON.stringify(experiment.check))
+ if(experiment.failures.some(failure=>failure.revision===experiment.revision))throw new Error('A simulation error requires a corrected protocol revision')
  return experiment
+}
+
+/** Compare confirmed equipment and placement independently of per-analysis IDs. */
+function hardware(setup){
+ return {robot:setup.robot,pipettes:[...setup.pipettes].sort((a,b)=>(a.mount+a.name).localeCompare(b.mount+b.name)),
+  modules:setup.modules.map(({id,...module})=>module),waste:setup.waste,
+  labware:setup.labware.map(item=>Object.fromEntries(['load_name','definition','slot','adapter','tiprack'].map(key=>[key,item[key]])))
+   .sort((a,b)=>(String(a.slot)+a.load_name).localeCompare(String(b.slot)+b.load_name))}
 }
 function inspectAnalysis(experiment,volume,robot) {
   const analysis=JSON.parse(Buffer.from(experiment.check.result.analysisBase64,'base64'))
@@ -170,14 +180,17 @@ try{
    const session=await page.locator('[data-conversation-session]:visible').last().getAttribute('data-conversation-session');assert.ok(session);result.sessionId=session
    await until(()=>state(session).ends.length>=1);console.log(robot+' missing-volume question completed');assert.equal(state(session).experiments.length,0,'Must ask for missing volume');result.questionMs=Date.now()-first
    const answer=await send(page,'A1和A2各50微升。接受标准兼容配置作为模拟假设；初始为空的目标孔请在协议中保留，来源仍是1000微升，每个目标孔使用新枪头。')
-   const initial=await until(()=>checked(session,1,2));console.log(robot+' initial real simulation passed at revision '+initial.revision);result.experimentId=initial.id;result.initialRevision=initial.revision;result.initialAnalysisFailures=initial.failures;inspectAnalysis(initial,50,robot)
+   const initial=await until(()=>checked(session,1,2,2));console.log(robot+' initial real simulation passed at revision '+initial.revision);result.experimentId=initial.id;result.initialRevision=initial.revision;result.initialAnalysisFailures=initial.failures;inspectAnalysis(initial,50,robot)
    await page.locator(`[data-experiment-revision="${initial.revision}"]`).waitFor({timeout:30000});await player(page);result.answerToPlayableMs=Date.now()-answer
    await page.getByRole('button',{name:/^(配置图|Setup image)$/}).click();await page.locator('iframe[title="配置图"],iframe[title="Setup image"]').waitFor({timeout:20000})
    result.initialDownloads=await artifacts(page,robot+'-r1',initial,50);await until(()=>state(session).ends.length>=2)
    const change=await send(page,'只把每个目标孔的转移体积从50改为40微升，其余所有条件和同一个实验不变。重新仿真并更新预览。')
-   const revised=await until(()=>checked(session,initial.revision+1,3));console.log(robot+' revised real simulation passed at revision '+revised.revision);assert.equal(revised.id,initial.id);result.revisedRevision=revised.revision;result.analysisFailures=revised.failures;inspectAnalysis(revised,40,robot)
+   const revised=await until(()=>checked(session,initial.revision+1,3,3));console.log(robot+' revised real simulation passed at revision '+revised.revision);assert.equal(revised.id,initial.id);result.revisedRevision=revised.revision;result.analysisFailures=revised.failures;inspectAnalysis(revised,40,robot)
    await page.getByRole('button',{name:/^(动画|Animation)$/}).click();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page);result.changeToPlayableMs=Date.now()-change
-   result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await page.reload();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page)
+   result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40)
+   assert.deepEqual(hardware(JSON.parse(readFileSync(reportRoot+robot+'-r1-setup.json','utf8'))),hardware(JSON.parse(readFileSync(reportRoot+robot+'-r2-setup.json','utf8'))),'Changing only volume must preserve hardware and deck positions')
+   result.hardwareUnchanged=true
+   await page.reload();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page)
    result.refreshRecovered=true;await page.screenshot({path:reportRoot+robot+'-passed.png',fullPage:true});result.status='PASS'
   }catch(error){result.status='FAIL';result.error=String(error);await page.screenshot({path:reportRoot+robot+'-failure.png',fullPage:true});throw error}finally{
    if(result.sessionId){try{result.analysisFailures=state(result.sessionId).experiments[0]?.failures||[];result.analysisFailureCount=result.analysisFailures.length}catch(error){result.analysisFailureDiagnostic=String(error).slice(0,2000)}}
