@@ -68,6 +68,7 @@ jobs:
           packages/client/ui-sidebar-experiment/tests/bundle.client.spec.ts
           packages/client/ui-sidebar-experiment/tests/experiment.client.spec.tsx
           packages/client/ui-sidebar-experiment/tests/voice-workbench.client.spec.tsx
+          packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
           packages/test-support/client-runtime/tests/assembly-test-client.client.spec.ts
           scripts/build-exe-for-python-sdk-office.spec.ts
       - name: Install Chromium for browser verification
