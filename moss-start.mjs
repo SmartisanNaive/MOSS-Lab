@@ -23,6 +23,8 @@ const dataDir = resolve(project, '.dsh-local')
 mkdirSync(dataDir, { recursive: true, mode: 0o700 })
 const previewDir = resolve(dataDir, 'previews')
 mkdirSync(previewDir, { recursive: true, mode: 0o700 })
+const demoDir = resolve(process.env.MOSS_PLUGIN_CACHE ?? dataDir, 'demos')
+mkdirSync(demoDir, { recursive: true, mode: 0o700 })
 const experimentDb = resolve(dataDir, 'experiments.sqlite')
 if (!existsSync(experimentDb)) {
   const store = new ExperimentStore({ path: experimentDb, create: true })
@@ -45,7 +47,7 @@ const child = spawn(process.execPath, [
     ? [resolve(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')]
     : ['--import', 'tsx/esm', 'apps/cli/src/bin.ts']), '--profile', 'web',
   '--patch', patchPath, ...process.argv.slice(2),
-], { cwd: root, env: { ...process.env, DSH_HOME: dataDir, MOSS_EXPERIMENT_DB: experimentDb, MOSS_PLUGIN_ROOT: runtime.root, MOSS_PLUGIN_DATA: runtime.data, LABSCRIPTAI_HOME: runtime.dependencyHome, MOSS_PLUGIN_VERSION: runtime.version, MOSS_PREVIEW_TMP: previewDir }, stdio: 'inherit' })
+], { cwd: root, env: { ...process.env, DSH_HOME: dataDir, MOSS_EXPERIMENT_DB: experimentDb, MOSS_PLUGIN_ROOT: runtime.root, MOSS_PLUGIN_DATA: runtime.data, LABSCRIPTAI_HOME: runtime.dependencyHome, MOSS_PLUGIN_VERSION: runtime.version, MOSS_PREVIEW_TMP: previewDir, MOSS_DEMO_TMP: demoDir }, stdio: 'inherit' })
 process.on('exit', cleanup)
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal))
 child.on('error', error => { console.error('网页启动失败:', error.message); process.exitCode = 1 })

@@ -38,7 +38,7 @@
     - id: experiment-demo
       name: ./internal/experiment/demo-plugin.mjs
       config:
-        temporaryRoot: !!js process.env.MOSS_PREVIEW_TMP
+        temporaryRoot: !!js process.env.MOSS_DEMO_TMP
     - id: xiaozhi-readonly
       name: ./internal/xiaozhi/plugin.mjs
       config:

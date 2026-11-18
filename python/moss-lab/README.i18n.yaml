@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write python/moss-lab/README.md
 /moss-windows-distribution:
-  en: 617659841b070e61
-  zh: b04697442037105e
+  en: 606758cc9f3a8f3a
+  zh: 3bcfeb3d79796dfa
