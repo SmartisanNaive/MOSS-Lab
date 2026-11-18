@@ -63,6 +63,8 @@ jobs:
           "MOSS_STANDALONE_PYTHON=$python" >> $env:GITHUB_ENV
       - name: Start using only the bundled Node and uv
         run: |
+          reg add 'HKLM\SYSTEM\CurrentControlSet\Control\FileSystem' /v LongPathsEnabled /t REG_DWORD /d 0 /f
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $python = $env:MOSS_STANDALONE_PYTHON
           $env:PATH = "$(Split-Path $python);$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem;$env:SystemRoot\System32\WindowsPowerShell\v1.0;$env:SystemRoot\System32\OpenSSH"
           Remove-Item Env:NODE_PATH,Env:PYTHONPATH,Env:PNPM_HOME -ErrorAction SilentlyContinue
@@ -137,7 +139,7 @@ jobs:
           & $python -m moss_lab status
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $demo = Get-Content (Join-Path $env:RUNNER_TEMP 'moss-demo.json') -Raw | ConvertFrom-Json
-          $result = @{ platform = 'win32'; sourceCheckout = $false; externalNode = $false; externalUv = $false; demo = $demo; artifactRun = $env:MOSS_ARTIFACT_RUN; publicVersion = $env:MOSS_PUBLIC_VERSION; status = 'PASS' }
+          $result = @{ platform = 'win32'; sourceCheckout = $false; externalNode = $false; externalUv = $false; longPathsEnabled = $false; demo = $demo; artifactRun = $env:MOSS_ARTIFACT_RUN; publicVersion = $env:MOSS_PUBLIC_VERSION; status = 'PASS' }
           $result | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'moss-standalone.json') -Encoding utf8NoBOM
       - uses: actions/upload-artifact@v4
         with:
