@@ -144,6 +144,7 @@ jobs:
       - name: Build application
         run: pnpm run build
       - name: Build complete Windows wheel
+        id: build-wheel
         run: node --import tsx/esm scripts/build-moss-wheel.mjs --python python
       - name: Install wheel into a clean Python environment
         run: |
@@ -167,7 +168,8 @@ jobs:
         run: node scripts/check-moss-installed.mjs "$env:MOSS_TEST_PYTHON" "$env:MOSS_TEST_HOME" validation-windows
       - name: Test real pip update, rollback, damaged-package repair and old-data migration
         run: '& $env:MOSS_TEST_PYTHON scripts/check-moss-pip.py "$env:MOSS_TEST_HOME" validation-windows'
-      - name: Retain installable wheel and checksum
+      - name: Retain built candidate wheel and checksum
+        if: always() && steps.build-wheel.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: moss-windows-wheel

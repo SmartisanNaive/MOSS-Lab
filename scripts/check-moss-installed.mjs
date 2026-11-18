@@ -54,7 +54,8 @@ function state(session){
  try{for(const e of database.prepare('SELECT e.id,e.current_revision,r.snapshot_json FROM experiments e JOIN revisions r ON r.experiment_id=e.id AND r.revision=e.current_revision').all()){
   const snapshot=JSON.parse(e.snapshot_json);if(snapshot.sessionId!==session)continue
   const row=database.prepare('SELECT status,result_json FROM checks WHERE experiment_id=? AND revision=? ORDER BY sequence DESC LIMIT 1').get(e.id,e.current_revision)
-  experiments.push({id:e.id,revision:e.current_revision,snapshot,check:row?{status:row.status,result:row.result_json?JSON.parse(row.result_json):null}:null})
+  const failures=database.prepare("SELECT revision,status FROM checks WHERE experiment_id=? AND status IN ('failed','error','blocked') ORDER BY sequence").all(e.id)
+  experiments.push({id:e.id,revision:e.current_revision,snapshot,failures,check:row?{status:row.status,result:row.result_json?JSON.parse(row.result_json):null}:null})
  }}finally{database.close()}
  const root=join(home,'.dsh-local/sessions');let log
  function find(folder){if(!existsSync(folder))return;for(const entry of readdirSync(folder,{withFileTypes:true})){const path=join(folder,entry.name);if(entry.isDirectory())find(path);else if(entry.name==='session.v4.jsonl.zstd'&&path.includes(session))log=path}}
@@ -63,7 +64,15 @@ function state(session){
  return {experiments,ends:events.filter(e=>e.type==='turn/end')}
 }
 async function send(page,text){await page.locator('[data-composer-input][contenteditable="true"]').last().fill(text);const start=Date.now();await page.getByRole('button',{name:/^(发送消息|Send message)$/}).click();return start}
-function checked(session,revision){const current=state(session);assert.ok(current.experiments.length<=1);const experiment=current.experiments[0];if(!experiment||experiment.revision<revision)return null;if(['failed','error','blocked'].includes(experiment.check?.status))throw new Error('Real OT analysis failed: '+JSON.stringify(experiment.check.result));return experiment.revision===revision&&experiment.check?.status==='passed'?experiment:null}
+function checked(session,minimumRevision,turns){
+ const current=state(session);assert.ok(current.experiments.length<=1)
+ // A tool error can be repaired in the same model turn; judge its completed result.
+ if(current.ends.length<turns)return null
+ const experiment=current.experiments[0]
+ if(!experiment||experiment.revision<minimumRevision)throw new Error('Completed task did not produce the requested experiment revision')
+ if(experiment.check?.status!=='passed')throw new Error('Completed task has no passed analysis: '+JSON.stringify(experiment.check))
+ return experiment
+}
 function inspectAnalysis(experiment,volume,robot) {
   const analysis=JSON.parse(Buffer.from(experiment.check.result.analysisBase64,'base64'))
   assert.ok(analysis.robotType.includes(robot==='Flex'?'OT-3':'OT-2')||analysis.robotType===robot)
@@ -161,14 +170,14 @@ try{
    const session=await page.locator('[data-conversation-session]:visible').last().getAttribute('data-conversation-session');assert.ok(session);result.sessionId=session
    await until(()=>state(session).ends.length>=1);console.log(robot+' missing-volume question completed');assert.equal(state(session).experiments.length,0,'Must ask for missing volume');result.questionMs=Date.now()-first
    const answer=await send(page,'A1和A2各50微升。接受标准兼容配置作为模拟假设；初始为空的目标孔请在协议中保留，来源仍是1000微升，每个目标孔使用新枪头。')
-   const initial=await until(()=>checked(session,1));console.log(robot+' real simulation revision 1 passed');result.experimentId=initial.id;inspectAnalysis(initial,50,robot)
-   await page.locator('[data-experiment-revision="1"]').waitFor({timeout:30000});await player(page);result.answerToPlayableMs=Date.now()-answer
+   const initial=await until(()=>checked(session,1,2));console.log(robot+' initial real simulation passed at revision '+initial.revision);result.experimentId=initial.id;result.initialRevision=initial.revision;result.initialAnalysisFailures=initial.failures;inspectAnalysis(initial,50,robot)
+   await page.locator(`[data-experiment-revision="${initial.revision}"]`).waitFor({timeout:30000});await player(page);result.answerToPlayableMs=Date.now()-answer
    await page.getByRole('button',{name:/^(配置图|Setup image)$/}).click();await page.locator('iframe[title="配置图"],iframe[title="Setup image"]').waitFor({timeout:20000})
    result.initialDownloads=await artifacts(page,robot+'-r1',initial,50);await until(()=>state(session).ends.length>=2)
    const change=await send(page,'只把每个目标孔的转移体积从50改为40微升，其余所有条件和同一个实验不变。重新仿真并更新预览。')
-   const revised=await until(()=>checked(session,2));console.log(robot+' real simulation revision 2 passed');assert.equal(revised.id,initial.id);inspectAnalysis(revised,40,robot)
-   await page.getByRole('button',{name:/^(动画|Animation)$/}).click();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page);result.changeToPlayableMs=Date.now()-change
-   result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await until(()=>state(session).ends.length>=3);await page.reload();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page)
+   const revised=await until(()=>checked(session,initial.revision+1,3));console.log(robot+' revised real simulation passed at revision '+revised.revision);assert.equal(revised.id,initial.id);result.revisedRevision=revised.revision;result.analysisFailures=revised.failures;inspectAnalysis(revised,40,robot)
+   await page.getByRole('button',{name:/^(动画|Animation)$/}).click();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page);result.changeToPlayableMs=Date.now()-change
+   result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await page.reload();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page)
    result.refreshRecovered=true;await page.screenshot({path:reportRoot+robot+'-passed.png',fullPage:true});result.status='PASS'
   }catch(error){result.status='FAIL';result.error=String(error);await page.screenshot({path:reportRoot+robot+'-failure.png',fullPage:true});throw error}finally{await context.close()}
  }
