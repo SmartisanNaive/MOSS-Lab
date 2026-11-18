@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Only test this retained Windows wheel without a checkout
+        type: string
+      public_version:
+        description: Only test this published moss-v Windows package and its updater
+        type: string
 
 permissions:
   contents: read
@@ -17,7 +24,18 @@ env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
+  standalone-install:
+    if: github.event_name == 'workflow_dispatch' && (inputs.artifact_run_id != '' || inputs.public_version != '')
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/moss-standalone.yml
+    with:
+      artifact_run_id: ${{ inputs.artifact_run_id }}
+      public_version: ${{ inputs.public_version }}
+
   web:
+    if: github.event_name != 'workflow_dispatch' || (inputs.artifact_run_id == '' && inputs.public_version == '')
     name: Build and test web
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -79,6 +97,7 @@ jobs:
         run: pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/built-boot.expected.e2e.ts apps/web/tests/voice-workbench.e2e.ts
 
   windows-installer:
+    if: github.event_name != 'workflow_dispatch' || (inputs.artifact_run_id == '' && inputs.public_version == '')
     name: Native Windows install and recovery
     runs-on: windows-2025
     timeout-minutes: 100

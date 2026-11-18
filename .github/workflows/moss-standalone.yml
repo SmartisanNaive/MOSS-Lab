@@ -1,7 +1,7 @@
 name: MOSS standalone Windows install
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       artifact_run_id:
         description: Successful MOSS web run containing the exact Windows wheel
