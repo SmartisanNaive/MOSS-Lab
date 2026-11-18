@@ -170,7 +170,7 @@ jobs:
         run: '& $env:MOSS_TEST_PYTHON scripts/check-moss-pip.py "$env:MOSS_TEST_HOME" validation-windows'
       - name: Retain built candidate wheel and checksum
         if: always() && steps.build-wheel.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: moss-windows-wheel
           path: dist-moss/*
@@ -178,7 +178,7 @@ jobs:
           retention-days: 14
       - name: Retain public test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: moss-windows-test-evidence
           path: validation-windows/

@@ -324,7 +324,7 @@ jobs:
       # failing the benchmark job a second time.
       - name: Upload scaled benchmark report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-report
           path: benchmarks/.dsh-report/

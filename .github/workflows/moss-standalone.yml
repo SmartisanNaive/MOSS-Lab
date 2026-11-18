@@ -143,7 +143,7 @@ jobs:
           $demo = Get-Content (Join-Path $env:RUNNER_TEMP 'moss-demo.json') -Raw | ConvertFrom-Json
           $result = @{ platform = 'win32'; sourceCheckout = $false; externalNode = $false; externalUv = $false; longPathsEnabled = $false; demo = $demo; artifactRun = $env:MOSS_ARTIFACT_RUN; publicVersion = $env:MOSS_PUBLIC_VERSION; status = 'PASS' }
           $result | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'moss-standalone.json') -Encoding utf8NoBOM
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moss-standalone-evidence
           path: ${{ runner.temp }}/moss-standalone.json

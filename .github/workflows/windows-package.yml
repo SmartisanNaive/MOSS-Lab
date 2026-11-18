@@ -215,7 +215,7 @@ jobs:
         run: node --import tsx apps/desktop/scripts/retain-desktop-ci.ts
       - name: Retain packaging diagnostics
         if: always() && steps.checkout.outcome == 'success'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: windows-package-logs-${{ github.run_id }}-${{ github.run_attempt }}
           include-hidden-files: true
@@ -224,7 +224,7 @@ jobs:
           retention-days: 14
       - name: Retain verified unsigned installer
         if: success() && inputs.signing == 'unsigned'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: windows-x64-unsigned-${{ steps.settings.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
           compression-level: 0
@@ -234,7 +234,7 @@ jobs:
           retention-days: 14
       - name: Retain verified signed installer
         if: success() && inputs.signing == 'signed'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: windows-x64-signed-${{ steps.settings.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
           compression-level: 0

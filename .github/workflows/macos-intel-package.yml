@@ -142,7 +142,7 @@ jobs:
         run: node --import tsx apps/desktop/scripts/retain-desktop-ci.ts
       - name: Retain packaging diagnostics
         if: always() && steps.checkout.outcome == 'success'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: macos-x64-package-logs-${{ github.run_id }}-${{ github.run_attempt }}
           include-hidden-files: true
@@ -151,7 +151,7 @@ jobs:
           retention-days: 14
       - name: Retain installers for the selected mode
         if: success()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: macos-x64-${{ steps.settings.outputs.mode }}-${{ steps.settings.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
           include-hidden-files: true
