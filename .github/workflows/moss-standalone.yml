@@ -111,7 +111,8 @@ jobs:
               common = {key: status[key] for key in ['id', 'revision', 'task']}
               common['session'] = 'demo'
               for name in ['animation', 'setup']:
-                  assert b'<html' in get({**common, 'resource': name}).lower()
+                  content = get({**common, 'resource': name})
+                  assert len(content) > 200 and re.search(br'<!doctype\s+html\b|<html\b', content, re.I), f'{name} must be an HTML document'
               names = {file['name'] for file in status['files']}
               assert {'setup.png', 'setup.json', 'wells.csv'} <= names
               for name in ['setup.png', 'setup.json', 'wells.csv']:
