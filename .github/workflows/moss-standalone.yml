@@ -83,8 +83,10 @@ jobs:
           import http.cookiejar, json, os, pathlib, queue, re, subprocess, sys, threading, time, urllib.parse, urllib.request
           child = subprocess.Popen([sys.executable, '-m', 'moss_lab', 'start', '--no-open', '--port', '0', '--timeout', '1800'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
           lines = queue.Queue()
+          startup_errors = []
           def read_output():
               for line in child.stdout:
+                  if line.startswith('MOSS:'): startup_errors.append(line.strip()[:2000])
                   lines.put(line)
               lines.put(None)
           reader = threading.Thread(target=read_output, daemon=True)
@@ -95,7 +97,7 @@ jobs:
               while time.monotonic() < deadline:
                   try: line = lines.get(timeout=1)
                   except queue.Empty: continue
-                  if line is None: raise RuntimeError('Standalone application exited before readiness')
+                  if line is None: raise RuntimeError('Standalone application exited before readiness: ' + ' '.join(startup_errors[-3:]))
                   match = re.search(r'MOSS [\d.]+ ready\. (http[^\s]+)', line)
                   if match:
                       url = match[1]
