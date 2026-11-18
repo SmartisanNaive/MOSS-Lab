@@ -112,6 +112,13 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm run build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: astral-sh/setup-uv@v7
+        with:
+          cache-dependency-glob: labscriptai-ot.lock.json
+      - name: Verify confined Flex and OT-2 simulation and portable documents
+        run: node --import tsx/esm scripts/check-labscriptai.mjs
+      - name: Verify confined robot controls against loopback fixtures only
+        run: node --import tsx/esm --test internal/experiment/tests/robot-mcp-integration.test.mjs
       - name: Build complete Windows wheel
         run: node --import tsx/esm scripts/build-moss-wheel.mjs --python python
       - name: Install wheel into a clean Python environment
