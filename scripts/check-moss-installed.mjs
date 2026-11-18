@@ -179,7 +179,10 @@ try{
    await page.getByRole('button',{name:/^(动画|Animation)$/}).click();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page);result.changeToPlayableMs=Date.now()-change
    result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await page.reload();await page.locator(`[data-experiment-revision="${revised.revision}"]`).waitFor({timeout:30000});await player(page)
    result.refreshRecovered=true;await page.screenshot({path:reportRoot+robot+'-passed.png',fullPage:true});result.status='PASS'
-  }catch(error){result.status='FAIL';result.error=String(error);await page.screenshot({path:reportRoot+robot+'-failure.png',fullPage:true});throw error}finally{await context.close()}
+  }catch(error){result.status='FAIL';result.error=String(error);await page.screenshot({path:reportRoot+robot+'-failure.png',fullPage:true});throw error}finally{
+   if(result.sessionId){try{result.analysisFailures=state(result.sessionId).experiments[0]?.failures||[];result.analysisFailureCount=result.analysisFailures.length}catch(error){result.analysisFailureDiagnostic=String(error).slice(0,2000)}}
+   await context.close()
+  }
  }
 }finally{
  if(browser)await browser.close();if(child.exitCode===null)child.kill(process.platform==='win32'?'SIGTERM':'SIGINT');await exited;proxy.closeAllConnections();await new Promise(accept=>proxy.close(accept))
