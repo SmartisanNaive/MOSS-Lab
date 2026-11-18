@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -75,7 +76,14 @@ class InstallationTests(unittest.TestCase):
         archive = folder / "application.zip"
         node_name = "node.exe" if os.name == "nt" else "node"
         with zipfile.ZipFile(archive, "w") as zipped:
-            zipped.write(NODE, node_name)
+            if sys.platform == "darwin":
+                # Repeated copied Mach-O fixtures trigger host trust scans; execute
+                # the existing native Node while still exercising real process trees.
+                launcher = zipfile.ZipInfo(node_name)
+                launcher.external_attr = 0o100755 << 16
+                zipped.writestr(launcher, '#!/bin/sh\nexec ' + shlex.quote(NODE) + ' "$@"\n')
+            else:
+                zipped.write(NODE, node_name)
             zipped.writestr("app.mjs", BOOT.replace("MODE", json.dumps(mode)))
         atomic_json(folder / "manifest.json", {"schema": 1, "manager_api": 1, "version": version,
                     "platform": sys.platform, "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
@@ -252,6 +260,27 @@ class ProcessTreeTests(unittest.TestCase):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_missing_pip_record_cannot_create_an_empty_recovery_wheel(self):
+        from moss_lab.update import installed_wheel
+        with tempfile.TemporaryDirectory() as folder, patch("moss_lab.update.importlib.metadata.distribution") as distribution:
+            distribution.return_value.files = None
+            with self.assertRaisesRegex(RuntimeError, "record is missing"):
+                installed_wheel(Path(folder))
+            self.assertEqual(list(Path(folder).iterdir()), [])
+
+    def test_incomplete_recovery_wheel_never_replaces_the_installed_namespace(self):
+        from moss_lab.recovery import restore_package
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            package = root / "moss_lab"
+            package.mkdir()
+            (package / "cli.py").write_text("existing installer")
+            with zipfile.ZipFile(root / "incomplete.whl", "w") as archive:
+                archive.writestr("moss_lab-0.1.0.dist-info/RECORD", "")
+            with self.assertRaisesRegex(RuntimeError, "incomplete"):
+                restore_package(root / "incomplete.whl", root)
+            self.assertEqual((package / "cli.py").read_text(), "existing installer")
+
     def test_command_help_matches_the_shipped_user_entry(self):
         from moss_lab.cli import main
         output = io.StringIO()
@@ -266,7 +295,9 @@ class ArchiveTests(unittest.TestCase):
                 root = Path(folder)
                 with zipfile.ZipFile(root / "bad.zip", "w") as archive:
                     for name in names:
-                        archive.writestr(name, b"bad")
+                        entry = zipfile.ZipInfo()
+                        entry.filename = name
+                        archive.writestr(entry, b"bad")
                 with self.assertRaisesRegex(RuntimeError, "Unsafe"):
                     extract(root / "bad.zip", root / "out")
                 self.assertFalse((root / "escape").exists())

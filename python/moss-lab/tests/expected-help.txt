@@ -1,13 +1,12 @@
-usage: py -m moss_lab [-h] [--home HOME]
-                      {start,check,update,import,recover,rollback,config,status} ...
+usage: py -m moss_lab [--home HOME] {start,check,update,import,recover,rollback,config,status} ...
 
 MOSS laboratory workbench
 
 positional arguments:
   {start,check,update,import,recover,rollback,config,status}
     import              Copy legacy data after stopping the old service
-    recover             Recover an interrupted upgrade after confirming all
-                        MOSS processes stopped
+    recover             Recover an interrupted upgrade after confirming all MOSS
+                        processes stopped
 
 options:
   -h, --help            show this help message and exit

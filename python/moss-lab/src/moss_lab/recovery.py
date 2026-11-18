@@ -84,8 +84,30 @@ def regular_tree(root: Path):
         raise RuntimeError("Recovery backup contains a special file")
 
 
+def verify_recovery_wheel(wheel: Path):
+    """An empty or incomplete installed RECORD must never become a recovery package."""
+    with zipfile.ZipFile(wheel) as archive:
+        required = {"moss_lab/" + name + ".py" for name in
+                    ["__init__", "__main__", "cli", "install", "process", "update", "recovery"]}
+        required.update(["moss_lab/_payload/manifest.json", "moss_lab/_payload/application.zip"])
+        names = set(archive.namelist())
+        if not required.issubset(names):
+            raise RuntimeError("Recovery wheel is incomplete; installed files were not changed")
+        manifest = json.loads(archive.read("moss_lab/_payload/manifest.json"))
+        metadata = "moss_lab-" + manifest["version"] + ".dist-info/"
+        if manifest.get("manager_api") != 1 or not {metadata + n for n in ["WHEEL", "METADATA", "RECORD"]}.issubset(names):
+            raise RuntimeError("Recovery wheel metadata is incomplete")
+        checksum = hashlib.sha256()
+        with archive.open("moss_lab/_payload/application.zip") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                checksum.update(block)
+        if checksum.hexdigest() != manifest.get("sha256"):
+            raise RuntimeError("Recovery application checksum mismatch")
+
+
 def restore_package(wheel: Path, directory: Path):
     """Restore this dependency-free namespace even if pip's RECORD was removed."""
+    verify_recovery_wheel(wheel)
     supported = {Path(sysconfig.get_path("purelib")).resolve(), Path(sysconfig.get_path("platlib")).resolve(),
                  Path(site.getusersitepackages()).resolve()}
     if directory.resolve() not in supported:

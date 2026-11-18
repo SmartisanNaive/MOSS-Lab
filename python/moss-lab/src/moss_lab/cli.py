@@ -12,7 +12,9 @@ from .update import update
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="py -m moss_lab", description="MOSS laboratory workbench")
+    parser = argparse.ArgumentParser(prog="py -m moss_lab", description="MOSS laboratory workbench",
+        usage="py -m moss_lab [--home HOME] {start,check,update,import,recover,rollback,config,status} ...",
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, width=80))
     parser.add_argument("--home", type=Path, default=default_home(), help="Persistent configuration and experiment directory")
     subcommands = parser.add_subparsers(dest="command", required=True)
     for name in ["start", "check", "update"]:

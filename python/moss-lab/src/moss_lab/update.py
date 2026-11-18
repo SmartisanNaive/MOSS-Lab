@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 from .install import Bundle, Manager, digest
-from .recovery import recover_home, install_wheel as pip_install
+from .recovery import recover_home, verify_recovery_wheel, install_wheel as pip_install
 
 REPOSITORY = "SmartisanNaive/MOSS-Lab"
 
@@ -38,6 +38,8 @@ def download(url: str, destination: Path, limit: int) -> None:
 def installed_wheel(destination: Path) -> Path:
     """Reconstruct the installed, dependency-free wheel before pip can replace it."""
     distribution = importlib.metadata.distribution("moss-lab")
+    if not distribution.files:
+        raise RuntimeError("Installed pip record is missing; reinstall a verified complete MOSS wheel before upgrading")
     version = distribution.version
     wheel_metadata = distribution.read_text("WHEEL")
     tag = next(line.removeprefix("Tag: ") for line in wheel_metadata.splitlines() if line.startswith("Tag: "))
@@ -59,6 +61,7 @@ def installed_wheel(destination: Path) -> Path:
         stream = io.StringIO()
         csv.writer(stream, lineterminator="\n").writerows(records)
         archive.writestr(record_name, stream.getvalue())
+    verify_recovery_wheel(target)
     return target
 
 
