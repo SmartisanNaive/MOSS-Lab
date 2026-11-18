@@ -51,7 +51,7 @@ Run the declaration and tool tests with `node --import tsx/esm --test internal/e
 
 ## Preview components
 
-`buildPreview` requests portable documents from the pinned plugin through `protocol_artifacts` only after checking the session, revision, protocol hash, and latest analysis digest. MOSS verifies API/version/digests and copies only resulting HTML into its own private preview directory. It never imports plugin Python or rewrites viewer JavaScript. Animation and setup availability are independent; setup represents declared initial liquids, not inferred final contents. Rejected manifests retain bounded plugin and document failure reasons in `ExperimentError.details`; rejected output is never published.
+`buildPreview` requests portable documents from the pinned plugin through `protocol_artifacts` only after checking the session, revision, protocol hash, and latest analysis digest. MOSS verifies API/version/digests and copies only resulting HTML into its own private preview directory. It never imports plugin Python or rewrites viewer JavaScript. Animation and setup availability are independent; setup represents declared initial liquids, not inferred final contents. Rejected manifests retain bounded plugin and document failure reasons in `ExperimentError.details`; rejected output is never published. Windows confined calls request inherited capability ACLs only under their private invocation directory.
 
 `PreviewResources` rechecks the owner and current task before serving `animation`, `setup`, or manifest-listed downloads. The version-locked MCP adapter confines each plugin process's writes to a private directory. Interrupted invocations retain that directory because child-process termination is uncertain. See [MOSS setup](../../MOSS-LAB.md).
 

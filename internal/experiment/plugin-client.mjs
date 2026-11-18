@@ -58,6 +58,7 @@ export function createPluginClient(config) {
     const transport = new StdioClientTransport({ command: confined.argv[0], args: confined.argv.slice(1), cwd: directory, stderr: 'pipe',
       env: { ...env, HOME: home, TMPDIR: directory, TEMP: directory, TMP: directory, PYTHONDONTWRITEBYTECODE: '1',
         PLUGIN_DATA: directory, OPENTRONS_PLUGIN_ROOT: config.root, LABSCRIPTAI_HOME: config.dependencyHome,
+        LABSCRIPTAI_INHERIT_PRIVATE_ACL: process.platform === 'win32' ? '1' : '0',
         FLEX3D_EXPORT: join(directory, 'export'), OPENTRONS_CONNECTION_FILE: join(directory, 'robot.json'),
         ...(robot ? { OPENTRONS_HOST: robot.origin, ...(robot.authorization ? { OPENTRONS_AUTHORIZATION: robot.authorization } : {}) } : {}), MUJOCO_GL: 'disable' }, maxBufferSize: 12 * 1024 * 1024,
     })

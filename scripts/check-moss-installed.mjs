@@ -168,7 +168,7 @@ try{
    const change=await send(page,'只把每个目标孔的转移体积从50改为40微升，其余所有条件和同一个实验不变。重新仿真并更新预览。')
    const revised=await until(()=>checked(session,2));console.log(robot+' real simulation revision 2 passed');assert.equal(revised.id,initial.id);inspectAnalysis(revised,40,robot)
    await page.getByRole('button',{name:/^(动画|Animation)$/}).click();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page);result.changeToPlayableMs=Date.now()-change
-   result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await page.reload();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page)
+   result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await until(()=>state(session).ends.length>=3);await page.reload();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page)
    result.refreshRecovered=true;await page.screenshot({path:reportRoot+robot+'-passed.png',fullPage:true});result.status='PASS'
   }catch(error){result.status='FAIL';result.error=String(error);await page.screenshot({path:reportRoot+robot+'-failure.png',fullPage:true});throw error}finally{await context.close()}
  }

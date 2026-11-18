@@ -22,6 +22,7 @@ home = Path(sys.argv[1]).resolve()
 report = Path(sys.argv[2]).resolve()
 report.mkdir(parents=True, exist_ok=True)
 results = []
+os.environ["MOSS_TEST_INSTALL_PYTHON"] = sys.executable
 
 
 def run(*args, success=True):
@@ -52,7 +53,7 @@ def variant(original, destination, version, *, failing=False):
             with zipfile.ZipFile(io.BytesIO(archive_bytes)) as app, zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED) as replacement:
                 info = app.getinfo(node)
                 replacement.writestr(info, app.read(node))
-                replacement.writestr('failed.mjs', "import{createInterface}from'node:readline';import fs from'node:fs';import path from'node:path';import{DatabaseSync}from'node:sqlite';const r=createInterface({input:process.stdin});r.once('line',()=>{r.close();const home=process.env.MOSS_HOME;fs.writeFileSync(path.join(home,'.env'),'BROKEN=1');const db=new DatabaseSync(path.join(home,'.dsh-local/experiments.sqlite'));db.exec('DELETE FROM checks;DELETE FROM revisions;DELETE FROM session_creation_keys;DELETE FROM robot_runs;DELETE FROM experiments');db.close();process.exit(17)});")
+                replacement.writestr('failed.mjs', "import{createInterface}from'node:readline';import fs from'node:fs';import path from'node:path';import{spawnSync}from'node:child_process';import{DatabaseSync}from'node:sqlite';const r=createInterface({input:process.stdin});r.once('line',()=>{r.close();const home=process.env.MOSS_HOME;const version=spawnSync(process.env.MOSS_TEST_INSTALL_PYTHON,['-c','import importlib.metadata;print(importlib.metadata.version(\"moss-lab\"))'],{encoding:'utf8'}).stdout.trim();fs.writeFileSync(path.join(home,'.env'),'BROKEN=1');const db=new DatabaseSync(path.join(home,'.dsh-local/experiments.sqlite'));const before=db.prepare('SELECT count(*) AS count FROM checks').get().count;db.exec('DELETE FROM checks');const after=db.prepare('SELECT count(*) AS count FROM checks').get().count;db.close();fs.writeFileSync(path.join(home,'test-upgrade-probe.json'),JSON.stringify({packageVersion:version,checksBefore:before,checksAfter:after}));throw new Error('intentional candidate startup failure after modifying data')});")
             archive_bytes = stream.getvalue()
             manifest['entry'] = 'failed.mjs'
         manifest.update(version=version, sha256=hashlib.sha256(archive_bytes).hexdigest())
@@ -100,6 +101,10 @@ try:
         good = stage / ('moss_lab-0.1.2-py3-none-' + tag)
         variant(original, bad, '0.1.1', failing=True)
         run('update', '--wheel', bad, '--port', '0', '--timeout', '60', success=False)
+        probe = json.loads((home / 'test-upgrade-probe.json').read_text())
+        assert probe['packageVersion'] == '0.1.1', 'The failing application must really run from the newly installed pip package'
+        assert probe['checksBefore'] == counts['checks'] and probe['checksAfter'] == 0, 'The rollback must restore data that was actually changed'
+        (home / 'test-upgrade-probe.json').unlink()
         assert package_version() == '0.1.0'
         assert data_hashes(home) == original_hashes, 'Failed update did not restore exact history and key'
         assert not (home / 'package-update.json').exists()
@@ -111,6 +116,7 @@ try:
         marker = home / '.dsh-local/after-upgrade.txt'
         marker.write_text('Keep this new data too', encoding='utf-8')
         run('rollback')
+        assert run('status').stdout.startswith('MOSS 0.1.0\n')
         assert data_hashes(home) == original_hashes
         assert list((home / 'backups').glob('retained-*/.dsh-local/after-upgrade.txt'))
         run('check', '--port', '0', '--timeout', '1800')
