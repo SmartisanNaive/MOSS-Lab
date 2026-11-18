@@ -1,0 +1,7 @@
+{
+  "name": "moss-lab-application",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MOSS payload version and managed application bootstrap."
+}

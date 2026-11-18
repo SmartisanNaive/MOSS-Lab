@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "moss-lab"
+version = "0.1.0"
+description = "MOSS laboratory workbench, bundled Node runtime and versioned upgrades"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/moss_lab"]
+core-metadata-version = "2.4"
+
+[tool.hatch.build.targets.wheel.hooks.custom]

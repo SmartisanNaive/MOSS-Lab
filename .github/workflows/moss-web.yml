@@ -52,7 +52,7 @@ jobs:
       - name: Test experiment storage and preview resources
         run: node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs internal/experiment/tests/preview-resources.test.mjs internal/experiment/tests/robot-status-plugin.test.mjs internal/experiment/tests/robot-control.test.mjs internal/xiaozhi/*.test.mjs
       - name: Test plugin lock, recovery and download resources
-        run: node --import tsx/esm --test internal/experiment/tests/plugin-runtime.test.mjs internal/experiment/tests/preview-recovery.test.mjs
+        run: node --import tsx/esm --test internal/experiment/tests/plugin-runtime.test.mjs internal/experiment/tests/preview-recovery.test.mjs internal/experiment/tests/install-readiness.test.mjs
       - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: labscriptai-ot.lock.json
@@ -77,3 +77,75 @@ jobs:
         env:
           MOSS_TEST_REAL_OT: '1'
         run: pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/built-boot.expected.e2e.ts apps/web/tests/voice-workbench.e2e.ts
+
+  windows-installer:
+    name: Native Windows install and recovery
+    runs-on: windows-2025
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      MOSS_ALLOW_LIVE_ROBOT: '0'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v5.0.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Enable native symlinks
+        run: |
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
+          git config --global core.symlinks true
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm run build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Test native files, SQLite, failed upgrades and process-tree death
+        run: python -m unittest discover -s python/moss-lab/tests -v
+      - name: Build complete Windows wheel
+        run: node --import tsx/esm scripts/build-moss-wheel.mjs --python python
+      - name: Install wheel into a clean Python environment
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP 'MOSS 安装 spaces\venv'
+          python -m venv $venv
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $python = Join-Path $venv 'Scripts\python.exe'
+          $wheel = (Get-ChildItem dist-moss/moss_lab-*-win_amd64.whl).FullName
+          & $python -m pip install --no-deps $wheel
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "MOSS_TEST_PYTHON=$python" >> $env:GITHUB_ENV
+          "MOSS_TEST_HOME=$(Join-Path $env:RUNNER_TEMP 'MOSS 数据 spaces\home')" >> $env:GITHUB_ENV
+          "MOSS_TEST_OPENSSL=C:\Program Files\Git\usr\bin\openssl.exe" >> $env:GITHUB_ENV
+      - name: Install real Chromium
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install chromium
+      - name: Test installed browser, real model, Flex and OT-2 simulation and downloads
+        env:
+          MOSS_INSTALL_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+        run: node scripts/check-moss-installed.mjs "$env:MOSS_TEST_PYTHON" "$env:MOSS_TEST_HOME" validation-windows
+      - name: Test real pip update, rollback, damaged-package repair and old-data migration
+        run: '& $env:MOSS_TEST_PYTHON scripts/check-moss-pip.py "$env:MOSS_TEST_HOME" validation-windows'
+      - name: Retain installable wheel and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: moss-windows-wheel
+          path: dist-moss/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain public test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: moss-windows-test-evidence
+          path: validation-windows/
+          if-no-files-found: ignore
+          retention-days: 14

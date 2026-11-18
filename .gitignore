@@ -54,3 +54,8 @@ worktrees/
 .typert-*/
 native/system/test/bin/
 .moss-model-*.patch.yml
+# Generated MOSS application installers.
+.moss-build/
+dist-moss/
+python/moss-lab/src/moss_lab/_payload/
+python/moss-lab/**/__pycache__/

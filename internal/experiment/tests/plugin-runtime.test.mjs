@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
@@ -39,6 +39,19 @@ test('pinned installation verifies checksums, installs once, and retains existin
   const rollback = await ensurePluginRuntime(directory, { ...options, fetcher: async () => assert.fail('old archive must remain cached') })
   assert.equal(rollback.root, runtime.root)
   assert.ok(!(await readdir(join(directory, '.dsh-local/plugins'))).some(name => name.startsWith('install-')))
+})
+
+test('packaged runtime keeps program dependencies outside experiment snapshots', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'plugin-storage-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const archive = zipSync({ 'plugin/.codex-plugin/plugin.json': strToU8(JSON.stringify({ version: '0.1.3' })), 'plugin/servers/opentrons-mcp/index.js': strToU8('// fixture') })
+  await writeFile(join(directory, 'labscriptai-ot.lock.json'), JSON.stringify(lock(checksum(archive))))
+  const cacheHome = join(directory, 'home/runtime-cache')
+  const runtime = await ensurePluginRuntime(directory, { dataHome: join(directory, 'home'), cacheHome, override: undefined,
+    fetcher: async () => new Response(archive), installer: async (_root, dependencies) => assert.equal(dependencies, join(cacheHome, 'dependencies')) })
+  assert.ok(runtime.root.startsWith(await realpath(cacheHome)))
+  assert.ok(runtime.data.startsWith(await realpath(cacheHome)))
+  await assert.rejects(readdir(join(directory, 'home/.dsh-local')), { code: 'ENOENT' })
 })
 
 test('archive extraction rejects traversal and mixed roots before publishing an install', async t => {

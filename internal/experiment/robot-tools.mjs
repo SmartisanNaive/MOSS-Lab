@@ -1,4 +1,4 @@
-import { defineTool } from '../../packages/core/tools/src/schema.ts'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'robot-tools'
 export const inject = ['tools', 'robotControl']

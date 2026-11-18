@@ -95,12 +95,12 @@ export async function installDependencies(root, dependencyHome) {
 
 /** Resolve one immutable runtime for this process; failed installs cannot replace an installed version.
  * @param {string} project MOSS project directory.
- * @param {object} options Optional development root and network provider.
+ * @param {object} options Development root, persistent data/cache directories, network provider and installer.
  * @returns {Promise<object>} Runtime paths and pinned identity.
  */
-export async function ensurePluginRuntime(project, { override = process.env.LABSCRIPTAI_OT_ROOT, fetcher = fetch, installer = installDependencies } = {}) {
+export async function ensurePluginRuntime(project, { dataHome = project, cacheHome = join(dataHome, '.dsh-local/plugins'), override = process.env.LABSCRIPTAI_OT_ROOT, fetcher = fetch, installer = installDependencies } = {}) {
   const lock = validateLock(JSON.parse(await readFile(join(project, 'labscriptai-ot.lock.json'), 'utf8')))
-  const managed = join(project, '.dsh-local/plugins')
+  const managed = cacheHome
   const dependencyHome = join(managed, 'dependencies')
   const target = join(managed, lock.sha256)
   let root = override ? await realpath(override) : target

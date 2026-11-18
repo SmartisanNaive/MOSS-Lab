@@ -1,4 +1,4 @@
-import { defineTool } from '../../packages/core/tools/src/schema.ts'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** Tools for the current session's experiments. */
 export const name = 'experiment-agent-tools'

@@ -1,4 +1,7 @@
 - insert:
+    - id: moss-install-readiness
+      name: ./internal/experiment/install-readiness.mjs
+      disabled: !!js "process.env.MOSS_PACKAGED !== '1'"
     - id: experiment-store
       name: ./internal/experiment/plugin.mjs
       config:

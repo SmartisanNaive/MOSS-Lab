@@ -1,4 +1,4 @@
-import { NativeToolExecutor } from '../packages/core/tool-executor-native/src/index.ts'
+import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native'
 
 /** Suppress tool schemas and deny tool execution for the enclosing preset. */
 export const name = 'chat-tools'
