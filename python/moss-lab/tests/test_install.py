@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -62,7 +63,19 @@ class NativeFixtureBundle(Bundle):
 class InstallationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="MOSS 中文 spaces ")
-        self.addCleanup(self.temporary.cleanup)
+        def cleanup():
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    self.temporary.cleanup()
+                    return
+                except PermissionError as error:
+                    # Windows/Defender can briefly retain a stopped image file.
+                    # A persistent sharing violation still fails this teardown.
+                    if os.name != "nt" or getattr(error, "winerror", None) != 32 or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
+        self.addCleanup(cleanup)
         self.root = Path(self.temporary.name)
         self.home = self.root / "user home"
         self.home.mkdir()

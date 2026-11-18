@@ -60,6 +60,10 @@ class ApplicationProcess:
             # Before job assignment the bootstrap only waits on stdin and cannot spawn.
             self.child.kill()
         self.child.wait(timeout=15)
+        if os.name == "nt":
+            # Reap the process object as well as its exit; retained exception
+            # frames must not keep a stopped Windows executable mapped.
+            self.child._handle.Close()
         if self.child.stdin is not None:
             self.child.stdin.close()
 
