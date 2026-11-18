@@ -112,6 +112,20 @@ class InstallationTests(unittest.TestCase):
     def activate(self, manager):
         return manager.activate(manager.bundle, port=0, timeout=20)
 
+    def test_installed_application_can_read_files_beyond_windows_max_path(self):
+        bundle = self.bundle()
+        relative = '/'.join(['assets', *['segment-' + 'a' * 40 + str(i) for i in range(6)], 'description.txt'])
+        with zipfile.ZipFile(bundle.archive, 'a') as archive:
+            archive.writestr(relative, 'long path content')
+        manifest = dict(bundle.manifest, sha256=hashlib.sha256(bundle.archive.read_bytes()).hexdigest())
+        atomic_json(bundle.directory / 'manifest.json', manifest)
+        release = NativeFixtureBundle(bundle.directory).install(self.home)
+        result = subprocess.run([NODE, '--input-type=module', '-e',
+            "import fs from 'node:fs';try{process.stdout.write(fs.readFileSync(process.argv[1],'utf8'))}finally{fs.rmSync(process.argv[2],{recursive:true,force:true,maxRetries:3,retryDelay:50})}",
+            str(release / relative), str(release)], check=True, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.stdout, 'long path content')
+        self.assertEqual(self.files(), self.original)
+
     def test_log_creation_failure_never_launches_a_process(self):
         manager = Manager(self.home, self.bundle())
         manager.bundle.install(self.home)

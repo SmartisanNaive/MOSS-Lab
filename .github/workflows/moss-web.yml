@@ -140,6 +140,8 @@ jobs:
         run: node --import tsx/esm scripts/build-moss-wheel.mjs --python python
       - name: Install wheel into a clean Python environment
         run: |
+          reg add 'HKLM\SYSTEM\CurrentControlSet\Control\FileSystem' /v LongPathsEnabled /t REG_DWORD /d 0 /f
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $venv = Join-Path $env:RUNNER_TEMP 'MOSS 安装 spaces\venv'
           python -m venv $venv
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

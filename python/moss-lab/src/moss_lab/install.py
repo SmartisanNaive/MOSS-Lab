@@ -148,7 +148,11 @@ class Bundle:
             if read_json(destination / "manifest.json") != self.manifest:
                 raise RuntimeError("Installed MOSS version metadata differs")
             return destination
-        staging = Path(tempfile.mkdtemp(prefix=".prepare-", dir=releases))
+        staging_name = tempfile.mkdtemp(prefix=".prepare-", dir=releases)
+        # Extended paths keep extraction and cleanup independent of the Windows path-length policy.
+        if os.name == "nt" and not staging_name.startswith("\\\\?\\"):
+            staging_name = "\\\\?\\UNC\\" + staging_name[2:] if staging_name.startswith("\\\\") else "\\\\?\\" + staging_name
+        staging = Path(staging_name)
         try:
             extract(self.archive, staging)
             for key in ["node", "entry"]:
