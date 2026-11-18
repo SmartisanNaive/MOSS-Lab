@@ -139,7 +139,13 @@ export function createPluginClient(config) {
  * @returns {Promise<object>} Independently available document buffers.
  */
 export async function readPluginDocuments(result, analysisSha256, version, directory) {
-  if (!result?.ok || result.artifact_api !== 1 || result.plugin_version !== version || result.analysis_sha256 !== analysisSha256) throw new ExperimentError('PLUGIN_RESPONSE_INVALID', 'plugin artifacts do not match the analysis or supported API version')
+  if (!result?.ok || result.artifact_api !== 1 || result.plugin_version !== version || result.analysis_sha256 !== analysisSha256) {
+    const detail = value => typeof value === 'string' ? value.slice(0, 2000) : null
+    throw new ExperimentError('PLUGIN_RESPONSE_INVALID', 'plugin artifacts do not match the analysis or supported API version', {
+      pluginMessage: detail(result?.message), animationMessage: detail(result?.documents?.animation?.message),
+      setupMessage: detail(result?.documents?.setup?.message),
+    })
+  }
   const documents = {}
   for (const name of ['animation', 'setup']) {
     const entry = result.documents?.[name]

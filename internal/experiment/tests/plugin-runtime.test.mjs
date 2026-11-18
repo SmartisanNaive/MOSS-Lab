@@ -123,4 +123,13 @@ test('artifact manifests reject incompatible APIs, mixed analyses and tampered b
   }
   await writeFile(path, '<html>modified</html>')
   await assert.rejects(readPluginDocuments(value, 'analysis', '0.1.3', directory), { code: 'PLUGIN_RESPONSE_INVALID' })
+  await assert.rejects(readPluginDocuments({ ...value, ok: false, documents: {
+    animation: { status: 'unavailable', message: 'animation dependency failed' },
+    setup: { status: 'unavailable', message: 'x'.repeat(3000) },
+  } }, 'analysis', '0.1.3', directory), error => {
+    assert.equal(error.code, 'PLUGIN_RESPONSE_INVALID')
+    assert.equal(error.details.animationMessage, 'animation dependency failed')
+    assert.equal(error.details.setupMessage.length, 2000)
+    return true
+  })
 })
