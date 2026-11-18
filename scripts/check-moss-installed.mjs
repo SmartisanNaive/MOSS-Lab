@@ -59,7 +59,7 @@ function state(session){
  const root=join(home,'.dsh-local/sessions');let log
  function find(folder){if(!existsSync(folder))return;for(const entry of readdirSync(folder,{withFileTypes:true})){const path=join(folder,entry.name);if(entry.isDirectory())find(path);else if(entry.name==='session.v4.jsonl.zstd'&&path.includes(session))log=path}}
  find(root);let events=[]
- if(log){try{events=zstdDecompressSync(readFileSync(log)).toString().trim().split('\n').filter(Boolean).map(JSON.parse)}catch(error){return {experiments,ends:[]}}}
+ if(log){try{const bytes=readFileSync(log),chunks=[];let position=0;while(position<bytes.length){const frame=zstdDecompressSync(bytes.subarray(position),{info:true});if(!frame.engine.bytesWritten)throw new Error('Incomplete session frame');chunks.push(frame.buffer);position+=frame.engine.bytesWritten}events=Buffer.concat(chunks).toString().trim().split('\n').filter(Boolean).map(JSON.parse)}catch(error){return {experiments,ends:[]}}}
  return {experiments,ends:events.filter(e=>e.type==='turn/end')}
 }
 async function send(page,text){await page.locator('[data-composer-input][contenteditable="true"]').last().fill(text);const start=Date.now();await page.getByRole('button',{name:/^(发送消息|Send message)$/}).click();return start}
@@ -146,9 +146,11 @@ async function artifacts(page,label,experiment,volume) {
 
 let browser;const results=[];const startup=Date.now()
 try{
+ console.log('Waiting for installed application readiness')
  const url=await until(()=>output.match(/MOSS [\d.]+ ready\. (http[^\s]+)/)?.[1],1900000)
  browser=await chromium.launch({headless:process.env.MOSS_TEST_HEADLESS==='1'})
  for(const robot of ['Flex','OT-2']){
+  console.log('Testing installed '+robot+' workflow')
   const result={robot,status:'RUNNING',startupMs:Date.now()-startup};results.push(result)
   const context=await browser.newContext({locale:'zh-CN',acceptDownloads:true,viewport:{width:1440,height:1000}}),page=await context.newPage()
   try{
@@ -157,14 +159,14 @@ try{
    const first=await send(page,`请作为实验助手，帮我规划一次 ${robot} 液体转移模拟：从储液槽 A1 转移到空的96孔板 A1、A2。来源初始1000微升水，每个目标孔用新枪头。每孔转移体积还没说，请先向我询问缺失信息再开始模拟。允许标准兼容耗材作为假设，只做本地水模拟，不连接实体设备。`)
    await page.locator('[data-chat-running]:not([aria-hidden="true"])').first().waitFor({timeout:15000});result.firstFeedbackMs=Date.now()-first
    const session=await page.locator('[data-conversation-session]:visible').last().getAttribute('data-conversation-session');assert.ok(session);result.sessionId=session
-   await until(()=>state(session).ends.length>=1);assert.equal(state(session).experiments.length,0,'Must ask for missing volume');result.questionMs=Date.now()-first
+   await until(()=>state(session).ends.length>=1);console.log(robot+' missing-volume question completed');assert.equal(state(session).experiments.length,0,'Must ask for missing volume');result.questionMs=Date.now()-first
    const answer=await send(page,'A1和A2各50微升。接受标准兼容配置作为模拟假设；初始为空的目标孔请在协议中保留，来源仍是1000微升，每个目标孔使用新枪头。')
-   const initial=await until(()=>checked(session,1));result.experimentId=initial.id;inspectAnalysis(initial,50,robot)
+   const initial=await until(()=>checked(session,1));console.log(robot+' real simulation revision 1 passed');result.experimentId=initial.id;inspectAnalysis(initial,50,robot)
    await page.locator('[data-experiment-revision="1"]').waitFor({timeout:30000});await player(page);result.answerToPlayableMs=Date.now()-answer
    await page.getByRole('button',{name:/^(配置图|Setup image)$/}).click();await page.locator('iframe[title="配置图"],iframe[title="Setup image"]').waitFor({timeout:20000})
    result.initialDownloads=await artifacts(page,robot+'-r1',initial,50);await until(()=>state(session).ends.length>=2)
    const change=await send(page,'只把每个目标孔的转移体积从50改为40微升，其余所有条件和同一个实验不变。重新仿真并更新预览。')
-   const revised=await until(()=>checked(session,2));assert.equal(revised.id,initial.id);inspectAnalysis(revised,40,robot)
+   const revised=await until(()=>checked(session,2));console.log(robot+' real simulation revision 2 passed');assert.equal(revised.id,initial.id);inspectAnalysis(revised,40,robot)
    await page.getByRole('button',{name:/^(动画|Animation)$/}).click();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page);result.changeToPlayableMs=Date.now()-change
    result.revisedDownloads=await artifacts(page,robot+'-r2',revised,40);await page.reload();await page.locator('[data-experiment-revision="2"]').waitFor({timeout:30000});await player(page)
    result.refreshRecovered=true;await page.screenshot({path:reportRoot+robot+'-passed.png',fullPage:true});result.status='PASS'

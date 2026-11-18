@@ -314,7 +314,6 @@ class Manager:
         logs.mkdir(exist_ok=True, mode=0o700)
         log_path = logs / ("start-" + uuid.uuid4().hex + ".log")
         messages = queue.Queue()
-        application = ApplicationProcess(command, cwd=directory, env=env)
         print("正在准备 OT 依赖并启动网页；首次启动需要联网下载。", flush=True)
         with log_path.open("x", encoding="utf-8") as log:
             os.chmod(log_path, 0o600)
@@ -326,9 +325,11 @@ class Manager:
                     messages.put(line)
                 messages.put(None)
 
-            reader = threading.Thread(target=read_output, daemon=True)
-            reader.start()
+            reader = None
+            application = ApplicationProcess(command, cwd=directory, env=env)
             try:
+                reader = threading.Thread(target=read_output, daemon=True)
+                reader.start()
                 deadline = time.monotonic() + timeout
                 progress = time.monotonic() + 20
                 url = None
@@ -375,9 +376,10 @@ class Manager:
                     application.stop()
                 except BaseException as error:
                     raise StopUncertain("Process-tree shutdown failed; the backup was retained without restoring data") from error
-                reader.join(timeout=15)
-                if reader.is_alive():
-                    raise StopUncertain("Application output has not closed; data recovery was not attempted")
+                if reader is not None and reader.ident is not None:
+                    reader.join(timeout=15)
+                    if reader.is_alive():
+                        raise StopUncertain("Application output has not closed; data recovery was not attempted")
                 application.child.stdout.close()
 
     def activate(self, bundle: Bundle, *, port: int, timeout: float) -> str:

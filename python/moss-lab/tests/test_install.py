@@ -85,6 +85,34 @@ class InstallationTests(unittest.TestCase):
     def activate(self, manager):
         return manager.activate(manager.bundle, port=0, timeout=20)
 
+    def test_log_creation_failure_never_launches_a_process(self):
+        manager = Manager(self.home, self.bundle())
+        manager.bundle.install(self.home)
+        original_open = Path.open
+        def denied(path, *args, **kwargs):
+            if path.parent == manager.home / "logs":
+                raise PermissionError("log denied")
+            return original_open(path, *args, **kwargs)
+        with patch.object(Path, "open", denied), patch("moss_lab.install.ApplicationProcess") as launch:
+            with self.assertRaisesRegex(PermissionError, "log denied"):
+                manager.run_release(manager.bundle.id, port=0, verify=True, no_open=True, timeout=20)
+            launch.assert_not_called()
+
+    def test_reader_start_failure_stops_the_real_application_before_returning(self):
+        from moss_lab.process import ApplicationProcess
+        manager = Manager(self.home, self.bundle())
+        manager.bundle.install(self.home)
+        children = []
+        def launch(*args, **kwargs):
+            application = ApplicationProcess(*args, **kwargs)
+            children.append(application)
+            return application
+        with patch("moss_lab.install.ApplicationProcess", side_effect=launch), patch("moss_lab.install.threading.Thread.start", side_effect=RuntimeError("reader denied")):
+            with self.assertRaisesRegex(RuntimeError, "reader denied"):
+                manager.run_release(manager.bundle.id, port=0, verify=True, no_open=True, timeout=20)
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].child.poll())
+
     def test_failed_new_application_restores_exact_config_database_and_conversation(self):
         old = self.bundle()
         first = Manager(self.home, old)

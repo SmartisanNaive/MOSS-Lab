@@ -32,7 +32,10 @@ class ApplicationProcess:
             self.child.stdin.flush()
             self.child.stdin.close()
         except BaseException:
-            self.stop()
+            try:
+                self.stop()
+            except BaseException as error:
+                raise StopUncertain("Bootstrap containment failed and shutdown is uncertain") from error
             raise
 
     def stop(self) -> None:
