@@ -108,7 +108,7 @@ def extract(archive: Path, destination: Path) -> None:
             path = PurePosixPath(entry.filename)
             mode = entry.external_attr >> 16
             identity = entry.filename.rstrip("/").casefold()
-            if (path.is_absolute() or not path.parts or ".." in path.parts
+            if (entry.orig_filename != entry.filename or path.is_absolute() or not path.parts or ".." in path.parts
                     or "\\" in entry.filename or ":" in entry.filename
                     or identity in seen or stat.S_ISLNK(mode)
                     or (stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR})):

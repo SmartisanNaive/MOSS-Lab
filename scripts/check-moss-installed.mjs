@@ -36,7 +36,7 @@ const proxy=createServer({key:readFileSync(privateKey),cert:readFileSync(certifi
     for(const line of text.split('\n')){try{const value=JSON.parse(line.replace(/^data: /,''));tokenCount+=value.usage?.total_tokens||0}catch(error){/* SSE delimiters are not JSON. */}}
     totalTokens+=tokenCount;usage.push({status:response.statusCode,tokens:tokenCount});outgoing.end()
    })
-  });upstream.on('error',()=>{outgoing.destroy(new Error('Model transport failed'))});upstream.end(raw)
+  });upstream.setTimeout(120000,()=>upstream.destroy(new Error('Model transport timed out')));upstream.on('error',()=>{outgoing.destroy()});upstream.end(raw)
  })
 })
 await new Promise(accept=>proxy.listen(0,'127.0.0.1',accept))
@@ -50,7 +50,7 @@ const exited=new Promise(accept=>child.on('exit',accept))
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 async function until(read,timeout=180000){const start=Date.now();while(Date.now()-start<timeout){const value=await read();if(value)return value;if(child.exitCode!==null)throw new Error('Installed application exited before task completed');await sleep(700)}throw new Error('Timed out waiting for actual workflow state')}
 function state(session){
- const database=new DatabaseSync(join(home,'.dsh-local/experiments.sqlite'),{readOnly:true}),experiments=[]
+ const database=new DatabaseSync(join(home,'.dsh-local/experiments.sqlite'),{readOnly:true,timeout:5000}),experiments=[]
  try{for(const e of database.prepare('SELECT e.id,e.current_revision,r.snapshot_json FROM experiments e JOIN revisions r ON r.experiment_id=e.id AND r.revision=e.current_revision').all()){
   const snapshot=JSON.parse(e.snapshot_json);if(snapshot.sessionId!==session)continue
   const row=database.prepare('SELECT status,result_json FROM checks WHERE experiment_id=? AND revision=? ORDER BY sequence DESC LIMIT 1').get(e.id,e.current_revision)
@@ -173,7 +173,7 @@ try{
   }catch(error){result.status='FAIL';result.error=String(error);await page.screenshot({path:reportRoot+robot+'-failure.png',fullPage:true});throw error}finally{await context.close()}
  }
 }finally{
- if(browser)await browser.close();if(child.exitCode===null)child.kill('SIGTERM');await exited;await new Promise(accept=>proxy.close(accept))
+ if(browser)await browser.close();if(child.exitCode===null)child.kill(process.platform==='win32'?'SIGTERM':'SIGINT');await exited;proxy.closeAllConnections();await new Promise(accept=>proxy.close(accept))
  writeFileSync(reportRoot+'installed-browser.json',JSON.stringify({platform:process.platform,arch:process.arch,requests,totalTokens,usage,results},null,2)+'\n')
  console.log(JSON.stringify({platform:process.platform,requests,totalTokens,results}))
 }

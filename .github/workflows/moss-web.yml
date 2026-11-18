@@ -104,14 +104,14 @@ jobs:
         run: |
           reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
           git config --global core.symlinks true
+      - name: Test native files, SQLite, failed upgrades and process-tree death
+        run: python -m unittest discover -s python/moss-lab/tests -v
       - name: Install and build
         run: |
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm run build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Test native files, SQLite, failed upgrades and process-tree death
-        run: python -m unittest discover -s python/moss-lab/tests -v
       - name: Build complete Windows wheel
         run: node --import tsx/esm scripts/build-moss-wheel.mjs --python python
       - name: Install wheel into a clean Python environment
