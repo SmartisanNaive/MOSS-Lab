@@ -23,7 +23,9 @@ async function routeFor(t, url, overrides = {}) {
   const ctx = new Context()
   let route
   ctx.provide('connection', { fetch: { register(value) { route = value; return () => { route = undefined } } } })
-  const fiber = ctx.plugin(plugin, { timeoutMs: 200, maxBytes: 4096, ...overrides })
+  // Healthy-response tests do not measure cold fetch startup or runner scheduling.
+  // Timeout and retry cases supply their own short, explicit budgets below.
+  const fiber = ctx.plugin(plugin, { timeoutMs: 6000, maxBytes: 4096, ...overrides })
   try {
     await fiber.await()
   } finally {
