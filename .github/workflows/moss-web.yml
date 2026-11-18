@@ -124,7 +124,14 @@ jobs:
           reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
           git config --global core.symlinks true
       - name: Test native files, SQLite, failed upgrades and process-tree death
-        run: python -m unittest discover -s python/moss-lab/tests -v
+        run: |
+          reg add 'HKLM\SYSTEM\CurrentControlSet\Control\FileSystem' /v LongPathsEnabled /t REG_DWORD /d 0 /f
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s python/moss-lab/tests -v
+          $testExit = $LASTEXITCODE
+          reg add 'HKLM\SYSTEM\CurrentControlSet\Control\FileSystem' /v LongPathsEnabled /t REG_DWORD /d 1 /f
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($testExit) { exit $testExit }
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - uses: astral-sh/setup-uv@v7
