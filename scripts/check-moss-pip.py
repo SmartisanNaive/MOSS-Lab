@@ -37,6 +37,15 @@ def data_hashes(root):
             for p in ([root / name] if (root / name).is_file() else (root / name).rglob('*')) if p.is_file()}
 
 
+def assert_data_hashes(expected, root=home, *, task):
+    actual = data_hashes(root)
+    differences = {name: {'before': expected.get(name), 'after': actual.get(name)}
+                   for name in sorted(expected.keys() | actual.keys()) if expected.get(name) != actual.get(name)}
+    if differences:
+        results.append({'task': task, 'status': 'FAIL', 'changed_files': differences})
+        raise AssertionError(f'{task}: changed files: {list(differences)}')
+
+
 def package_version():
     return subprocess.check_output([sys.executable, '-c', 'import importlib.metadata;print(importlib.metadata.version("moss-lab"))'], text=True).strip()
 
@@ -89,7 +98,7 @@ try:
     assert counts['experiments'] >= 2 and counts['revisions'] >= 4, counts
     original_hashes = data_hashes(home)
     run('check', '--port', '0', '--timeout', '1800')
-    assert data_hashes(home) == original_hashes, 'Normal restart changed persistent history'
+    assert_data_hashes(original_hashes, task='normal-restart-preserves-persistent-history')
     results.append({'task': 'installed-restart-preserves-real-history', 'status': 'PASS', 'counts': counts})
     bundle = Bundle(Path(importlib.metadata.distribution('moss-lab').locate_file('moss_lab/_payload')))
     manager = Manager(home, bundle)
@@ -106,18 +115,18 @@ try:
         assert probe['checksBefore'] == counts['checks'] and probe['checksAfter'] == 0, 'The rollback must restore data that was actually changed'
         (home / 'test-upgrade-probe.json').unlink()
         assert package_version() == '0.1.0'
-        assert data_hashes(home) == original_hashes, 'Failed update did not restore exact history and key'
+        assert_data_hashes(original_hashes, task='failed-update-restores-exact-history-and-key')
         assert not (home / 'package-update.json').exists()
         results.append({'task': 'real-pip-failed-application-restores-package-and-real-data', 'status': 'PASS'})
         variant(original, good, '0.1.2')
         run('update', '--wheel', good, '--port', '0', '--timeout', '1800')
         assert package_version() == '0.1.2'
-        assert data_hashes(home) == original_hashes
+        assert_data_hashes(original_hashes, task='successful-update-preserves-history')
         marker = home / '.dsh-local/after-upgrade.txt'
         marker.write_text('Keep this new data too', encoding='utf-8')
         run('rollback')
         assert run('status').stdout.startswith('MOSS 0.1.0\n')
-        assert data_hashes(home) == original_hashes
+        assert_data_hashes(original_hashes, task='manual-rollback-restores-exact-history')
         assert list((home / 'backups').glob('retained-*/.dsh-local/after-upgrade.txt'))
         run('check', '--port', '0', '--timeout', '1800')
         results.append({'task': 'real-pip-success-manual-rollback-retains-new-data-and-runs-old-application', 'status': 'PASS'})
@@ -141,7 +150,7 @@ try:
             busy = subprocess.run([sys.executable, str(recovery), '--stopped'], capture_output=True, timeout=30)
             assert busy.returncode != 0
             assert (home / 'package-update.json').is_file()
-            assert data_hashes(home) == original_hashes
+            assert_data_hashes(original_hashes, task='busy-recovery-preserves-history')
         finally:
             writer.stdin.close()
             writer.wait(timeout=15)
@@ -158,7 +167,7 @@ try:
         delayed = subprocess.run([sys.executable, str(recovery), '--install-wheel', str(original), '--writer-token', 'fixture-transaction'], capture_output=True, timeout=30)
         assert delayed.returncode != 0, 'A delayed pip writer must refuse a completed recovery'
         assert package_version() == '0.1.0'
-        assert data_hashes(home) == original_hashes
+        assert_data_hashes(original_hashes, task='external-repair-restores-exact-history')
         assert list((home / 'backups').glob('retained-pip-*/.dsh-local/new-during-pip.txt'))
         run('status')
         run('check', '--port', '0', '--timeout', '1800')
@@ -167,8 +176,8 @@ try:
     copied = home.parent / (home.name + '-imported')
     with exclusive(copied):
         Manager(copied, bundle).import_legacy(home, stopped=True)
-    assert data_hashes(copied) == original_hashes
-    assert data_hashes(home) == original_hashes
+    assert_data_hashes(original_hashes, copied, task='legacy-import-preserves-history')
+    assert_data_hashes(original_hashes, task='legacy-import-preserves-source')
     # A historical schema-2 database must migrate without losing any experiment or revision.
     with closing(sqlite3.connect(copied / '.dsh-local/experiments.sqlite')) as db:
         db.execute('DROP TABLE robot_runs')
@@ -178,7 +187,7 @@ try:
     with closing(sqlite3.connect(copied / '.dsh-local/experiments.sqlite')) as db:
         assert db.execute('PRAGMA user_version').fetchone()[0] == 3
         assert {table: db.execute('SELECT count(*) FROM ' + table).fetchone()[0] for table in counts} == counts
-    assert data_hashes(home) == original_hashes
+    assert_data_hashes(original_hashes, task='legacy-migration-preserves-source')
     results.append({'task': 'legacy-import-schema2-migration-retains-real-experiments-and-source', 'status': 'PASS'})
 finally:
     (report / 'installed-pip.json').write_text(json.dumps({'platform': sys.platform, 'results': results}, indent=2) + '\n')
