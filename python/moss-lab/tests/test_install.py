@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import shlex
 import sqlite3
 import subprocess
 import sys
@@ -46,6 +45,20 @@ input.once('line',line=>{
 '''
 
 
+class NativeFixtureBundle(Bundle):
+    def install(self, home):
+        directory = super().install(home)
+        if sys.platform == "darwin":
+            # Share the existing native fixture inode to avoid repeated macOS
+            # executable trust scans. Windows tests execute the extracted binary.
+            binary = directory / "node"
+            if not os.path.samefile(binary, NODE):
+                temporary = directory / "node-fixture"
+                os.link(Path(NODE).resolve(), temporary)
+                os.replace(temporary, binary)
+        return directory
+
+
 class InstallationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="MOSS 中文 spaces ")
@@ -76,19 +89,12 @@ class InstallationTests(unittest.TestCase):
         archive = folder / "application.zip"
         node_name = "node.exe" if os.name == "nt" else "node"
         with zipfile.ZipFile(archive, "w") as zipped:
-            if sys.platform == "darwin":
-                # Repeated copied Mach-O fixtures trigger host trust scans; execute
-                # the existing native Node while still exercising real process trees.
-                launcher = zipfile.ZipInfo(node_name)
-                launcher.external_attr = 0o100755 << 16
-                zipped.writestr(launcher, '#!/bin/sh\nexec ' + shlex.quote(NODE) + ' "$@"\n')
-            else:
-                zipped.write(NODE, node_name)
+            zipped.write(NODE, node_name)
             zipped.writestr("app.mjs", BOOT.replace("MODE", json.dumps(mode)))
         atomic_json(folder / "manifest.json", {"schema": 1, "manager_api": 1, "version": version,
                     "platform": sys.platform, "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
                     "node": node_name, "entry": "app.mjs"})
-        return Bundle(folder)
+        return NativeFixtureBundle(folder)
 
     def activate(self, manager):
         return manager.activate(manager.bundle, port=0, timeout=20)
