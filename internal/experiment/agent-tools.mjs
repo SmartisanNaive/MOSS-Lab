@@ -10,7 +10,7 @@ const output = {
 }
 const id = { type: 'string', required: true, description: 'Experiment id returned by create_experiment.' }
 const requirement = { type: 'string', required: true, description: 'Complete experiment requirement.' }
-const protocol = { type: 'string', required: true, description: 'Complete Opentrons Flex or OT-2 Python protocol, including requirements.robotType, a compatible apiLevel, metadata, and run(protocol). Declare known initial liquids with define_liquid and well.load_liquid before transfers; never substitute transfer totals for starting volumes. Mark undeclared starting volumes as unknown in assumptions. Use the simulation API only and do not connect to or command a robot.' }
+const protocol = { type: 'string', required: true, description: 'Complete Opentrons Flex or OT-2 Python protocol, including requirements.robotType, a compatible apiLevel, metadata, and run(protocol). Declare known initial liquids with define_liquid and well.load_liquid before transfers; never substitute transfer totals for starting volumes. Mark undeclared starting volumes as unknown in assumptions. Explicitly declare operator-confirmed empty destination wells with well.load_liquid(liquid=..., volume=0), or labware.load_empty for apiLevel 2.22 or later, so setup data preserves the known empty state. Use the simulation API only and do not connect to or command a robot. Common single-channel simulation load names are Flex flex_1channel_50 with opentrons_flex_96_tiprack_50ul, Flex flex_1channel_1000 with opentrons_flex_96_tiprack_1000ul, and OT-2 p300_single_gen2 with opentrons_96_tiprack_300ul. Common labware names are nest_12_reservoir_15ml and corning_96_wellplate_360ul_flat. Flex has no flex_1channel_200. Use confirmed equipment or explicitly stated simulation assumptions. Flex API 2.16 or later requires protocol.load_trash_bin("A3") or protocol.load_waste_chute() before discarding tips; reserve that fixture slot. OT-2 uses its fixed trash and must not call load_trash_bin.' }
 const parameters = {
   type: 'object', additionalProperties: false, required: true,
   description: 'Record the experimental setup and assumptions used to write the protocol.',
@@ -91,7 +91,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'analyze_experiment',
-    description: 'Submit the saved protocol for analysis and preview. This does not establish experimental safety or device readiness. Ask the user for missing information needed to design the experiment before proceeding.',
+    description: 'Submit the saved protocol for analysis and preview. This does not establish experimental safety or device readiness. Ask the user for missing information needed to design the experiment before proceeding. After a simulation error, use its diagnostic to update the same experiment and analyze the new revision. If the correction is uncertain or the same error repeats, stop and explain the remaining issue instead of probing another Python environment.',
     parameters: {
       id,
       revision: { type: 'integer', required: true, description: 'Current positive revision containing the protocol to analyze.' },

@@ -45,6 +45,8 @@ When `createWorkflow.create` or `update` omits `protocol`, the transfer template
 
 Agent tools require complete Python source. Their optional `parameters.initialVolumeUl` records a known single-source starting volume that must match the protocol declaration; omission means unknown and must be stated as unknown in `parameters.assumptions`. Custom protocols must declare known initial liquids with `define_liquid` / `load_liquid`; an unknown volume must not be invented from transfer totals. `example_transfer.py` explicitly assumes 1000 µL of water for its 200 µL transfer total; this is an example assumption, not a measured loading.
 
+Protocol parameter descriptions include common Flex and OT-2 simulation load names, their trash API differences, and explicit zero-volume declarations for confirmed empty wells. These tool descriptions remain visible when the experiment persona replaces the complete system prompt. After an analysis error, the model is directed to revise the same experiment and analyze its new revision, then stop and explain repeated or uncertain errors.
+
 Run the declaration and tool tests with `node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs`.
 
 ## Preview components

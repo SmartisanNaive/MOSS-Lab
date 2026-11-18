@@ -116,6 +116,9 @@
                 name: '@deepseek-ai/dsh-compaction-basic'
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
+- id: agent-preset-registry
+  config:
+    default: moss-experiment
 - id: llm-pi-ai
   config:
     providers:

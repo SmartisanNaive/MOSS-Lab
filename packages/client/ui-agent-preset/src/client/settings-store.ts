@@ -60,7 +60,7 @@ export function requiresCodingTools(preset: AgentPresetOption | undefined): bool
  * @returns Whether the preset can be selected for a new task.
  */
 export function isSelectablePreset(preset: AgentPresetOption): boolean {
-  return preset.id === 'chat' || preset.id === 'standard'
+  return preset.id === 'chat' || preset.id === 'standard' || preset.id === 'moss-experiment'
 }
 
 /** One roster entry exactly as the host reports it. */

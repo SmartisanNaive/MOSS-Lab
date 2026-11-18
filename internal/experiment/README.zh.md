@@ -45,6 +45,8 @@ node --import tsx/esm --test internal/experiment/tests/experiment.test.mjs inter
 
 Agent 工具要求完整 Python 源码。可选的 `parameters.initialVolumeUl` 记录已知的单一源液起始体积，必须与协议声明一致；省略表示未知，必须在 `parameters.assumptions` 中明确标记为 unknown。自定义协议必须通过 `define_liquid` / `load_liquid` 声明已知起始液体；不能用转移总量伪造未知装液量。`example_transfer.py` 为总计 200 µL 的转移明确假设起始有 1000 µL 水；这是示例假设，并非实测装液。
 
+协议参数说明包含 Flex 与 OT-2 的常见模拟耗材加载名、垃圾桶 API 差异及已确认空孔的显式零体积声明要求，即使实验助手替换整个系统提示也保留这些工具说明。分析失败时先修订同一实验，再分析新修订；重复错误或纠正依据不明时提示模型停止并说明问题。
+
 使用 `node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs` 运行装液声明及工具测试。
 
 ## 预览组件

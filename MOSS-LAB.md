@@ -15,7 +15,7 @@ cp .env.example .env
 node moss-start.mjs
 ```
 
-启动前填写 `.env` 模型配置，保持凭据私有。首次启动按 `labscriptai-ot.lock.json` 下载并校验外部插件，再由插件自己的安装器准备依赖。网络或校验失败会停止启动，不会临时换版本。版本与每日升级 PR 流程见 [README](README.zh.md#插件更新)。
+新任务默认使用「实验助手」，也可以在模式菜单中选择。已有会话保留原模式，通用 Agent 模式中的旧对话需要另开实验助手任务。启动前填写 `.env` 模型配置，保持凭据私有。首次启动按 `labscriptai-ot.lock.json` 下载并校验外部插件，再由插件自己的安装器准备依赖。网络或校验失败会停止启动，不会临时换版本。版本与每日升级 PR 流程见 [README](README.zh.md#插件更新)。
 
 `.dsh-local/` 保存网页会话、实验数据库、插件安装和产物。升级前停止旧服务并备份此目录与 `.env`；保留已有数据库，不要用空目录覆盖。旧 `labscriptai-ot/.venv` 不再使用，确认没有独立用途后可自行删除。模拟及动画不代表机器人就绪；状态查询不会执行机器人动作。
 
@@ -36,7 +36,7 @@ cp .env.example .env
 node moss-start.mjs
 ```
 
-Fill in the model configuration before startup and keep `.env` private. The first start downloads and verifies the plugin specified in `labscriptai-ot.lock.json`, then runs the plugin's own dependency installer. Network or checksum errors stop startup instead of selecting another version. See [README](README.md#plugin-updates) for version management and daily upgrade PRs.
+New tasks default to the experiment assistant, which is also available in the mode menu. Existing conversations keep their mode; start an experiment-assistant task for a conversation previously using the general Agent mode. Fill in the model configuration before startup and keep `.env` private. The first start downloads and verifies the plugin specified in `labscriptai-ot.lock.json`, then runs the plugin's own dependency installer. Network or checksum errors stop startup instead of selecting another version. See [README](README.md#plugin-updates) for version management and daily upgrade PRs.
 
 `.dsh-local/` stores web sessions, experiments, plugin installations, and artifacts. Stop the old service and back up this directory and `.env` before upgrading; preserve the existing database. The old `labscriptai-ot/.venv` is no longer used; remove it only after checking for independent uses. Simulation and animation do not establish robot readiness; status queries do not move the robot.
 

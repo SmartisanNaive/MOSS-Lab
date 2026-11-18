@@ -13,7 +13,7 @@ import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/cli
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController,
-  writeDefaultPreset,
+  writeDefaultPreset, isSelectablePreset,
 } from '../src/client/settings-store.ts'
 
 /** The roster store over a scripted context. */
@@ -522,3 +522,9 @@ function remoteRoster(defaultId: string) {
     },
   }
 }
+
+// The MOSS experiment preset must be reachable from the new-task chooser.
+it('includes the experiment assistant alongside chat and standard modes', () => {
+  expect(['standard', 'chat', 'moss-experiment', 'cordis'].filter(id => isSelectablePreset({ id })))
+    .toEqual(['standard', 'chat', 'moss-experiment'])
+})

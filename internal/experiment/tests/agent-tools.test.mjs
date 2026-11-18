@@ -36,6 +36,11 @@ test('registers scoped experiment tools and removes them on disposal', async () 
       assert.equal(properties.parameters.properties.initialVolumeUl.type, 'number')
       assert.match(properties.parameters.properties.initialVolumeUl.description, /Omit when unknown/)
       assert.match(properties.protocol.description, /define_liquid and well.load_liquid/)
+      assert.match(properties.protocol.description, /operator-confirmed empty destination wells/)
+      assert.match(properties.protocol.description, /Flex API 2.16 or later requires protocol.load_trash_bin/)
+      assert.match(properties.protocol.description, /OT-2 uses its fixed trash/)
+      assert.match(properties.protocol.description, /flex_1channel_1000 with opentrons_flex_96_tiprack_1000ul/)
+      assert.match(properties.protocol.description, /p300_single_gen2 with opentrons_96_tiprack_300ul/)
     }
     const prompt = await ctx.systemPrompt.assemble()
     const guidance = prompt.sections.find(section => section.name === 'labscriptai:experiment-workflow')
@@ -97,6 +102,22 @@ test('rejects missing identity and invalid tool arguments before calling workflo
     await assert.rejects(tools.update_experiment.execute({ id: 'exp', expectedRevision: 1, requirement: 'transfer' }, session('owner')))
     await assert.rejects(tools.analyze_experiment.execute({ id: 'exp', revision: '1' }, session('owner')))
     assert.deepEqual(calls, [])
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
+test('keeps authoring rules model-visible when the experiment persona replaces the complete system prompt', async () => {
+  const { ctx, tools } = await setup()
+  try {
+    ctx.systemPrompt.section({ name: 'test:experiment-persona', order: 0, complete: true, text: 'Laboratory assistant.' })
+    const prompt = await ctx.systemPrompt.assemble()
+    assert.equal(prompt.sections.some(section => section.name === 'labscriptai:experiment-workflow'), false)
+    const schemas = JSON.stringify(ctx.tools.schemas())
+    assert.match(schemas, /Flex API 2.16 or later requires protocol.load_trash_bin/)
+    assert.match(schemas, /opentrons_flex_96_tiprack_1000ul/)
+    assert.match(schemas, /operator-confirmed empty destination wells/)
+    assert.match(tools.analyze_experiment.description, /same error repeats, stop/)
   } finally {
     await ctx.fiber.dispose()
   }

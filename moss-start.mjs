@@ -30,13 +30,15 @@ if (!existsSync(experimentDb)) {
 }
 const runtime = await ensurePluginRuntime(project)
 console.error(`LabscriptAI OT ${runtime.version} (${runtime.revision}), artifact API ${runtime.artifact_api}`)
-const originalPatch = readFileSync(resolve(root, 'moss-model.patch.yml'), 'utf8')
-const chatName = "name: './internal/chat-tools.mjs'"
-if (!originalPatch.includes(chatName)) throw new Error('moss-model.patch.yml 缺少 chat 工具插件配置')
+let modelPatch = readFileSync(resolve(root, 'moss-model.patch.yml'), 'utf8')
+for (const file of ['internal/chat-tools.mjs', 'internal/experiment/robot-tools.mjs']) {
+  const name = `name: './${file}'`
+  if (!modelPatch.includes(name)) throw new Error(`moss-model.patch.yml 缺少 ${file} 插件配置`)
+  modelPatch = modelPatch.replace(name, `name: ${JSON.stringify(pathToFileURL(resolve(root, file)).href)}`)
+}
 const patchPath = resolve(root, `.moss-model-${randomUUID()}.patch.yml`)
 const cleanup = () => rmSync(patchPath, { force: true })
-const chatUrl = pathToFileURL(resolve(root, 'internal/chat-tools.mjs')).href
-writeFileSync(patchPath, originalPatch.replace(chatName, `name: ${JSON.stringify(chatUrl)}`), { mode: 0o600, flag: 'wx' })
+writeFileSync(patchPath, modelPatch, { mode: 0o600, flag: 'wx' })
 const child = spawn(process.execPath, [
   '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web',
   '--patch', patchPath, ...process.argv.slice(2),
