@@ -51,7 +51,7 @@ Agent 工具要求完整 Python 源码。可选的 `parameters.initialVolumeUl` 
 
 ## 预览组件
 
-`buildPreview` 核对会话、实验版本、协议摘要和最新分析摘要后，通过固定版本插件的 `protocol_artifacts` 获取独立页面。MOSS 校验接口、版本和摘要，只将生成的 HTML 缓存在自己的私有预览目录；不导入插件 Python，也不改写播放器 JavaScript。动画和配置图可独立使用；配置图展示声明的起始装液，不推算终点成分。
+`buildPreview` 核对会话、实验版本、协议摘要和最新分析摘要后，通过固定版本插件的 `protocol_artifacts` 获取独立页面。MOSS 校验接口、版本和摘要，只将生成的 HTML 缓存在自己的私有预览目录；不导入插件 Python，也不改写播放器 JavaScript。动画和配置图可独立使用；配置图展示声明的起始装液，不推算终点成分。拒绝的清单会在 `ExperimentError.details` 中保留有长度限制的插件与文档失败原因；无效产物不会发布。
 
 `PreviewResources` 在提供 `animation`、`setup` 或清单内的下载文件前，核对归属和当前任务。锁定版本的 MCP 适配器将每次插件调用的写入限制在私有目录内。调用中断后保留该目录，因为无法确认子进程已经退出。见 [MOSS 安装](../../MOSS-LAB.md)。
 

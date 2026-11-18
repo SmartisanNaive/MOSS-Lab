@@ -106,12 +106,8 @@ jobs:
           git config --global core.symlinks true
       - name: Test native files, SQLite, failed upgrades and process-tree death
         run: python -m unittest discover -s python/moss-lab/tests -v
-      - name: Install and build
-        run: |
-          pnpm install --frozen-lockfile
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          pnpm run build
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: labscriptai-ot.lock.json
@@ -119,6 +115,8 @@ jobs:
         run: node --import tsx/esm scripts/check-labscriptai.mjs
       - name: Verify confined robot controls against loopback fixtures only
         run: node --import tsx/esm --test internal/experiment/tests/robot-mcp-integration.test.mjs
+      - name: Build application
+        run: pnpm run build
       - name: Build complete Windows wheel
         run: node --import tsx/esm scripts/build-moss-wheel.mjs --python python
       - name: Install wheel into a clean Python environment
