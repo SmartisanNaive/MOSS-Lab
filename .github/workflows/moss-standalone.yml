@@ -35,7 +35,7 @@ jobs:
           if (($artifact -eq '') -eq ($version -eq '')) { throw 'Select exactly one artifact run or public version' }
           if ($artifact -and $artifact -notmatch '^\d+$') { throw 'Invalid artifact run ID' }
           if ($version -and $version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid public version' }
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - uses: actions/download-artifact@v8.0.1
