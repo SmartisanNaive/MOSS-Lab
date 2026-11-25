@@ -18,12 +18,12 @@ const tools = [
   },
   {
     name: 'moss_delegate',
-    description: '把用户原话交给电脑上的当前实验助手。生成中改口也立即提交，最新要求覆盖旧要求。用户回答实验问题时继续同一实验，仅明确另开实验才设 newExperiment=true。按 speech.speak/text 播报一次。awaitingConfirmation=true 时等待用户回答，再调用本工具；否则继续查询最新任务。',
+    description: '把用户原话交给电脑上的当前实验助手。生成中改口也立即提交，最新要求覆盖旧要求。用户回答实验问题时继续同一实验，仅明确另开实验才设 newExperiment=true。返回里的 result 和 question 是给电脑端看的简短提示；只按 speech.speak/text 播报一次，不要复述 result、question、JSON 或工具名。awaitingConfirmation=true 时等待用户回答，再调用本工具；否则继续查询最新任务。',
     inputSchema: { type: 'object', properties: { newExperiment: { type: 'boolean', description: '仅当用户明确要求另开新实验时为 true，普通补充和修改保持 false。' }, newTask: { type: 'boolean', description: '兼容旧调用方的别名。新调用使用 newExperiment。' }, message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务和已知实验条件。' } }, required: ['message'], additionalProperties: false },
   },
   {
     name: 'moss_task_status',
-    description: '持续观察 MOSS 任务。只在 speech.speak=true 时朗读 speech.text 一次，否则保持安静。遇 followJobId 改查最新任务。awaitingConfirmation=true 时停止自动查询并等待用户回答，再调用 moss_delegate。completed/error 后停止自动查询。仅用户主动问进度时设 userQuery=true。',
+    description: '持续观察 MOSS 任务。只在 speech.speak=true 时朗读 speech.text 一次，否则保持安静；不要朗读 result、question 或任何长列表，也不要复述电脑上的完整内容，一两次短句即可。遇 followJobId 改查最新任务。awaitingConfirmation=true 时停止自动查询并等待用户回答，再调用 moss_delegate。completed/error 后停止自动查询。仅用户主动问进度时设 userQuery=true。',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string', minLength: 1, maxLength: 128 }, userQuery: { type: 'boolean', description: '只有用户明确询问当前进度才为true，自动观察必须false。' } }, required: ['jobId'], additionalProperties: false },
   },
 ]

@@ -3,8 +3,21 @@ export function createVoiceFeedback({ delegation, offsetsMs, pollWaitMs, now = D
   if (!Array.isArray(offsetsMs) || offsetsMs.length !== 3 || offsetsMs[0] !== 0 || offsetsMs.some((value, index) => !Number.isSafeInteger(value) || value < 0 || index > 0 && value <= offsetsMs[index - 1]) || !Number.isSafeInteger(pollWaitMs) || pollWaitMs < 1) throw new Error('voice feedback requires three increasing offsets beginning at zero and a positive pollWaitMs')
   const cycles = new Map()
   const lifetime = new AbortController()
+  /**
+   * Keep spoken answers short: a long console question is condensed to its leading
+   * clause plus a pointer to the workbench, so the device never reads tables or lists.
+   * @param {unknown} value Console-side question or result text.
+   * @returns {string} Text safe to read aloud once.
+   */
+  const spoken = value => {
+    const flat = String(value ?? '').replace(/\s+/g, ' ').trim()
+    if (!flat || flat.length <= 80) return flat
+    const colon = flat.indexOf('：')
+    const head = (colon > 0 && colon <= 80 ? flat.slice(0, colon) : flat.slice(0, 80)).replace(/[，、,：:；;]$/, '')
+    return `${head}。详细问题请看电脑。`
+  }
   const speech = (cycle, speak, text, reason) => ({ speak, text, reason, waitingCount: cycle.count, waitingLimit: 3, instruction: reason === 'needs_input'
-    ? (speak ? '只朗读 text 一次，然后等用户回答。' : '保持安静，等用户回答。')
+    ? (speak ? '只朗读 text 一次，然后等用户回答；不要朗读 result 或 question 里的详细内容。' : '保持安静，等用户回答。')
     : (speak ? '只朗读 text 一次，不复述任务状态、JSON、工具名或额外解释。' : '保持安静，不播报等待、处理中或任何同义句。继续观察当前任务；用户改口应立即调用 moss_delegate，不能要求等本轮结束。') })
   const state = id => delegation.get(id)
   const cycleFor = job => {
@@ -22,8 +35,9 @@ export function createVoiceFeedback({ delegation, offsetsMs, pollWaitMs, now = D
     if (job.status === 'superseded' || job.followJobId) return { ...job, result: null, question: null, awaitingConfirmation: false, speech: speech(cycle, false, '', job.followJobId ? 'continued' : 'superseded'), followJobId: job.followJobId ?? job.supersededBy }
     if (pendingQuestion(job)) {
       const speak = userQuery || !questionReported(job, cycle)
+      const short = spoken(job.question)
       cycle.question = { jobId: job.jobId, text: job.question }
-      return { ...job, result: job.question, awaitingConfirmation: true, detailsAvailableInWorkbench: true, speech: speech(cycle, speak, speak ? job.question : '', 'needs_input') }
+      return { ...job, result: short, question: short, awaitingConfirmation: true, detailsAvailableInWorkbench: true, speech: speech(cycle, speak, speak ? short : '', 'needs_input') }
     }
     job = { ...job, awaitingConfirmation: false }
     if (terminal(job)) {

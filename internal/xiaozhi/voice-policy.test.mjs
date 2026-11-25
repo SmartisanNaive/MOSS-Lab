@@ -164,6 +164,24 @@ test('a clarification focuses once and finishes as needs_input rather than a pre
   } finally { feedback.close(); f.delegation.close() }
 })
 
+test('a long clarification is condensed before it is spoken', async () => {
+  const f = fixture()
+  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 10000 })
+  try {
+    const accepted = await f.delegation.submit('missing conditions'); f.claim(0)
+    const long = '请提供这个新实验的必要信息，我好写协议：\n1. 机器型号是 Flex 还是 OT-2？\n2. 源板、目标板、枪头盒分别放哪个槽位？\n3. 源液是什么、初始体积多少、每孔转移多少微升？\n4. 需要混匀吗、每次换枪头吗？'
+    assert.ok(long.length > 80)
+    f.delegation.captureIntent(accepted.sessionId).needsInput(long)
+    const heard = await feedback.status(accepted.jobId)
+    assert.equal(heard.awaitingConfirmation, true)
+    assert.equal(heard.speech.text, '请提供这个新实验的必要信息，我好写协议。详细问题请看电脑。')
+    assert.equal(heard.result, heard.speech.text)
+    assert.equal(heard.question, heard.speech.text)
+    assert.match(heard.speech.instruction, /不要朗读/)
+    assert.equal(heard.speech.speak, true)
+  } finally { feedback.close(); f.delegation.close() }
+})
+
 test('voice answers follow the original experiment even when the caller sets the new-task flag', async () => {
   const f = fixture()
   const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 1 })

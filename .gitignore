@@ -54,6 +54,8 @@ worktrees/
 .typert-*/
 native/system/test/bin/
 .moss-model-*.patch.yml
+# MOSS-Live voice test runbook and its generated evidence stay local.
+MOSS-Live语音测试执行手册.md
 # Generated MOSS application installers.
 .moss-build/
 dist-moss/
