@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { isAbsolute, join, relative, resolve, dirname, basename } from 'node:path'
 import { ExperimentError } from './index.mjs'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -34,6 +34,58 @@ async function writeProtocol(directory, protocol) {
   return path
 }
 
+function within(directory, path) {
+  const rel = relative(directory, path)
+  return !isAbsolute(rel) && rel !== '..' && !rel.startsWith('../') && !rel.startsWith('..\\')
+}
+
+async function prepareExperimentArguments(workspace, directory, name, args, protocol) {
+  const input = { ...args }
+  let protocolPath
+  for (const [key, value] of Object.entries(input)) {
+    if (key === 'weights' || key === 'python_executable' || key === 'base_url' || key === 'api_key'
+      || key === 'webhook_url' || key === 'notify_adapters' || key === 'watch_dir' || key === 'outbox_dir') {
+      throw new ExperimentError('PLUGIN_ARGUMENT_FORBIDDEN', `LabscriptAI setting ${key} is managed by the workbench.`)
+    }
+    if (!/(?:_path|_dir|_file|_folder)$/.test(key) && !(key === 'source' && name === 'flex3d_preflight_check')) continue
+    if (typeof value !== 'string' || !value) throw new ExperimentError('PLUGIN_ARGUMENT_INVALID', `Invalid LabscriptAI path for ${key}.`)
+    if (value === 'current_protocol.py' && protocol && ['file_path', 'protocol_path', 'source'].includes(key)) {
+      protocolPath ??= await writeProtocol(directory, protocol)
+      input[key] = protocolPath
+      continue
+    }
+    const canonicalRoot = await realpath(workspace)
+    const path = resolve(canonicalRoot, value)
+    if (!within(canonicalRoot, path)) throw new ExperimentError('PLUGIN_ARGUMENT_FORBIDDEN', `The ${key} path must belong to this experiment session.`)
+    let canonical
+    try { canonical = await realpath(path) } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+      canonical = join(await realpath(dirname(path)), basename(path))
+    }
+    if (!within(canonicalRoot, canonical)) throw new ExperimentError('PLUGIN_ARGUMENT_FORBIDDEN', `The ${key} path must belong to this experiment session.`)
+    input[key] = canonical
+  }
+  return input
+}
+
+async function photoResult(workspace, response) {
+  const json = response.content.find(item => item.type === 'text')?.text
+  if (!json || response.isError) return response
+  const envelope = JSON.parse(json)
+  if (envelope.success !== true) return response
+  const data = envelope.data
+  const content = [...response.content]
+  for (const path of new Set([data?.saved_to, data?.image_path, data?.annotated_image_path, data?.yolo?.annotated_image_path])) {
+    if (typeof path !== 'string') continue
+    const bytes = await readPluginFile(workspace, path, 12 * 1024 * 1024)
+    const mimeType = bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) ? 'image/jpeg'
+      : bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? 'image/png' : undefined
+    if (!mimeType) throw new ExperimentError('PLUGIN_RESPONSE_INVALID', 'LabscriptAI returned an unsupported photo format.')
+    content.push({ type: 'image', data: bytes.toString('base64'), mimeType })
+  }
+  return { ...response, content }
+}
+
 /** Create a confined MCP client for simulation, documents and configured robot operations.
  * @param {object} config Frozen plugin paths, version, timeout, and sandbox service.
  * @returns {object} Analysis, portable-document and robot methods; caller awaits operations before disposal.
@@ -42,24 +94,40 @@ export function createPluginClient(config) {
   for (const key of ['root', 'data', 'dependencyHome', 'version']) {
     if (typeof config?.[key] !== 'string' || !config[key]) throw new Error(`LabscriptAI client requires ${key}`)
   }
+  if (config.state !== undefined && !isAbsolute(config.state)) throw new Error('LabscriptAI state requires an absolute directory.')
+  if (config.visionPython && !isAbsolute(config.visionPython)) throw new Error('MOSS_VISION_PYTHON requires an absolute interpreter path.')
   if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs < 150000 || !config.sandbox) throw new Error('LabscriptAI client requires sandbox and timeoutMs >= 150000')
-  async function invoke(operation, robot, beforeDispatch) {
-    const directory = await mkdtemp(join(await realpath(config.data), 'mcp-'))
+  async function sessionDirectory(sessionId) {
+    const state = config.state ?? config.data
+    const directory = join(state, `session-${digest(sessionId)}`)
+    await mkdir(directory, { recursive: true, mode: 0o700 })
+    if (await realpath(directory) !== join(await realpath(state), basename(directory))) {
+      throw new ExperimentError('PLUGIN_STATE_INVALID', 'The experiment tool data directory was replaced.')
+    }
+    return directory
+  }
+
+  async function invoke(operation, robot, beforeDispatch, { sessionId, abort, vision = false } = {}) {
+    const workspace = sessionId === undefined ? undefined : await sessionDirectory(sessionId)
+    const directory = await mkdtemp(join(await realpath(workspace ?? config.data), 'mcp-'))
     const home = join(directory, 'home')
     await mkdir(home)
-    const timeoutMs = robot && !beforeDispatch ? Math.min(config.timeoutMs, 30000) : config.timeoutMs
-    const signal = AbortSignal.timeout(timeoutMs)
+    const timeoutMs = robot && !beforeDispatch && sessionId === undefined ? Math.min(config.timeoutMs, 30000) : config.timeoutMs
+    const deadline = AbortSignal.timeout(timeoutMs)
+    const signal = abort ? AbortSignal.any([abort, deadline]) : deadline
     let confined
-    try { confined = await config.sandbox.confine([process.execPath, join(config.root, 'servers/opentrons-mcp/index.js')], { mode: 'workspace-write', workspaceRoot: directory }, signal) } catch (error) {
+    try { confined = await config.sandbox.confine([process.execPath, join(config.root, 'servers/opentrons-mcp/index.js')], { mode: 'workspace-write', workspaceRoot: workspace ?? directory }, signal) } catch (error) {
       await rm(directory, { recursive: true, force: true })
       throw error
     }
     const env = Object.fromEntries(['PATH', 'SystemRoot', 'ComSpec', 'LOCALAPPDATA', 'USERPROFILE'].filter(key => process.env[key]).map(key => [key, process.env[key]]))
     const transport = new StdioClientTransport({ command: confined.argv[0], args: confined.argv.slice(1), cwd: directory, stderr: 'pipe',
       env: { ...env, HOME: home, TMPDIR: directory, TEMP: directory, TMP: directory, PYTHONDONTWRITEBYTECODE: '1',
-        PLUGIN_DATA: directory, OPENTRONS_PLUGIN_ROOT: config.root, LABSCRIPTAI_HOME: config.dependencyHome,
+        PLUGIN_DATA: workspace ?? directory, OPENTRONS_PLUGIN_ROOT: config.root, LABSCRIPTAI_HOME: config.dependencyHome,
         LABSCRIPTAI_INHERIT_PRIVATE_ACL: process.platform === 'win32' ? '1' : '0',
-        FLEX3D_EXPORT: join(directory, 'export'), OPENTRONS_CONNECTION_FILE: join(directory, 'robot.json'),
+        FLEX3D_EXPORT: join(workspace ?? directory, 'export'), OPENTRONS_CONNECTION_FILE: join(workspace ?? directory, 'robot.json'),
+        ...(vision ? { OPENTRONS_PREFLIGHT_VISION: 'on', OPENTRONS_VLM_PROVIDER: 'off',
+          ...(config.visionPython ? { OPENTRONS_PYTHON: config.visionPython } : {}) } : {}),
         ...(robot ? { OPENTRONS_HOST: robot.origin, ...(robot.authorization ? { OPENTRONS_AUTHORIZATION: robot.authorization } : {}) } : {}), MUJOCO_GL: 'disable' }, maxBufferSize: 12 * 1024 * 1024,
     })
     const client = new Client({ name: 'moss-lab-artifacts', version: '1' })
@@ -69,13 +137,16 @@ export function createPluginClient(config) {
     try {
       await client.connect(transport, { signal, timeout: timeoutMs })
       if (client.getServerVersion()?.version !== config.version) throw new ExperimentError('PLUGIN_VERSION_MISMATCH', 'plugin version differs from the lock; rerun installation')
-      const call = async (name, args) => {
-        const allowed = robot ? ['robot_status', 'get_protocols', 'query_history', 'run_protocol', 'preflight_run_setup', 'control_run'] : ['simulate_protocol', 'protocol_artifacts']
-        if (!allowed.includes(name)) throw new Error('MCP operation is not allowed')
+      const dispatch = async (name, args) => {
+        signal.throwIfAborted()
         beforeDispatch?.()
         unsettled = true
         const response = await client.callTool({ name, arguments: args }, { signal, timeout: timeoutMs })
         unsettled = false
+        return response
+      }
+      const call = async (name, args) => {
+        const response = await dispatch(name, args)
         const text = response.content?.find(item => item.type === 'text')?.text
         let envelope
         try { envelope = JSON.parse(text) } catch (error) { throw new ExperimentError('PLUGIN_RESPONSE_INVALID', 'plugin returned unreadable JSON', { cause: error.message }) }
@@ -87,9 +158,12 @@ export function createPluginClient(config) {
         }
         return envelope.data
       }
-      return await operation(call, directory)
+      return await operation(call, directory, { dispatch, client, signal, timeoutMs, workspace })
     } catch (error) {
       if (error instanceof ExperimentError) throw error
+      if (unsettled && robot && beforeDispatch) {
+        throw new ExperimentError('ROBOT_ACTION_UNCONFIRMED', 'LabscriptAI did not confirm the robot operation. Read the original run or device status before sending another action.', { cause: error.message })
+      }
       throw new ExperimentError('PLUGIN_CALL_FAILED', 'LabscriptAI operation failed; check the installed version and retry', { diagnostic, cause: error.message })
     } finally {
       await client.close()
@@ -100,11 +174,48 @@ export function createPluginClient(config) {
     }
   }
   return {
-    robot(robot, name, args, protocol, beforeDispatch) {
+    async catalog() {
+      return invoke(async (_call, _directory, { client, signal, timeoutMs }) => {
+        const { tools } = await client.listTools(undefined, { signal, timeout: timeoutMs })
+        if (!tools.length) throw new ExperimentError('PLUGIN_RESPONSE_INVALID', 'LabscriptAI did not publish any tools.')
+        return tools
+      })
+    },
+    workflow: () => readPluginFile(config.root, join(config.root, 'skills/opentrons-experiment-run/SKILL.md'), 64 * 1024).then(bytes => bytes.toString('utf8')),
+    guidance: topic => readPluginFile(config.root, join(config.root, 'policy', `${topic}.md`), 64 * 1024).then(bytes => bytes.toString('utf8')),
+    async grantRecovery(id) {
+      const directory = join(config.state ?? config.data, 'run-approvals')
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      await writeFile(join(directory, digest(id)), 'automatic recovery\n', { mode: 0o600, flag: 'wx' })
+    },
+    async recoveryGranted(id) {
+      try {
+        return (await readFile(join(config.state ?? config.data, 'run-approvals', digest(id)), 'utf8')) === 'automatic recovery\n'
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+        return false
+      }
+    },
+    experiment(robot, name, args, { sessionId, signal, protocol, beforeDispatch }) {
+      return invoke(async (_call, directory, { dispatch, workspace }) => {
+        const input = await prepareExperimentArguments(workspace, directory, name, args, protocol)
+        if (name === 'runtime_watch' && input.mode === 'loop') {
+          const limit = Math.floor(config.timeoutMs * 0.8)
+          input.max_runtime_ms ??= limit
+          if (input.max_runtime_ms > limit) {
+            throw new ExperimentError('PLUGIN_ARGUMENT_INVALID', `Use a watch loop of at most ${limit} ms and resume it while the run is active.`)
+          }
+        }
+        const response = await dispatch(name, input)
+        return name === 'capture_image' || name === 'deck_vision_check' ? photoResult(workspace, response) : response
+      }, robot, beforeDispatch, { sessionId, abort: signal, vision: name === 'deck_vision_check' })
+    },
+    robot(robot, name, args, protocol, beforeDispatch, sessionId) {
+      if (!['robot_status', 'get_protocols', 'query_history', 'run_protocol', 'preflight_run_setup', 'control_run'].includes(name)) throw new Error('Unknown MOSS robot operation.')
       return invoke(async (call, directory) => {
         if (protocol === undefined) return call(name, args)
         return call(name, { ...args, file_path: await writeProtocol(directory, protocol) })
-      }, robot, beforeDispatch)
+      }, robot, beforeDispatch, { sessionId })
     },
     analyze(protocol) {
       return invoke(async (call, directory) => {

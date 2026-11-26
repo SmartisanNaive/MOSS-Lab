@@ -1,0 +1,11 @@
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- insert:
+    - id: moss-labscriptai-fixture
+      name: ./labscriptai-fixture.mjs
+    - id: labscriptai-tools
+      name: ../../../internal/experiment/labscriptai-tools.mjs
+      config:
+        prefix: Read the target robot's status with LabscriptAI.

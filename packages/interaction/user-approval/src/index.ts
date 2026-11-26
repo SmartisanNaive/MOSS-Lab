@@ -235,11 +235,12 @@ export class ApprovalService extends Service {
    * authoritative append cannot reject the request or suppress its matching
    * audit event.
    * @param req - the pending decision (agent, tool identity, reason, signal).
+   * @param options - a host-owned interactive policy for an independent operation.
    * @returns the closed outcome; `'allowed-once'` is the only grant.
    * @throws when no turn is open or either audit event fails before the session
    *   append commit point.
    */
-  async request(req: ApprovalRequest): Promise<ApprovalOutcome> {
+  async request(req: ApprovalRequest, options?: { readonly policy: 'ask' }): Promise<ApprovalOutcome> {
     const session = req.agent.session
     if (!this.approvalStateOf(session).turnOpen) {
       throw new Error(
@@ -255,7 +256,7 @@ export class ApprovalService extends Service {
       ...req.callId !== undefined ? { callId: req.callId } : {},
       ...req.reason !== undefined ? { reason: req.reason } : {},
     })
-    const outcome = await this.decide(req, session)
+    const outcome = await this.decide(req, options?.policy ?? this.effectivePolicy(session))
     session.append('approval/decided', { id, outcome })
     return outcome
   }
@@ -287,10 +288,10 @@ export class ApprovalService extends Service {
   /**
    * Dispatch the waterfall, contained and raced against the request signal.
    * @param req - the borrowed public request.
-   * @param session - the request agent's session used for policy lookup.
+   * @param policy - the policy resolved for this operation by the host.
    * @returns the normalized closed outcome.
    */
-  private async decide(req: ApprovalRequest, session: Session): Promise<ApprovalOutcome> {
+  private async decide(req: ApprovalRequest, policy: ApprovalPolicy): Promise<ApprovalOutcome> {
     const signal = req.signal
     if (signal?.aborted) return 'cancelled'
     // The 'never' policy is decided HERE, before any dispatch: a listener
@@ -298,7 +299,7 @@ export class ApprovalService extends Service {
     // ahead of any gate LISTENER, so a listener-shaped gate cannot keep the
     // documented promise that 'never' rejects deterministically regardless
     // of registration order — only the service's own request path can.
-    if (this.effectivePolicy(session) === 'never') return 'rejected'
+    if (policy === 'never') return 'rejected'
     // Enter the promise chain BEFORE dispatching: a listener that throws
     // SYNCHRONOUSLY (before its first await) must land in the same rejection
     // path as an async one — `Promise.resolve(call())` would let it escape

@@ -13,15 +13,29 @@ function sessionId(exec) {
   return id
 }
 
-async function approve(ctx, exec, en, zh) {
+/** Ask the workbench for a one-shot device decision independent of file access. */
+export async function approveRobotAction(ctx, exec, en, zh) {
   const approval = ctx.get('approval')
   if (!approval) throw new Error('Open the MOSS workbench to confirm physical robot operations.')
   const outcome = await approval.request({
     agent: exec.agent, toolName: exec.name, callId: exec.callId,
     reason: en, displayReason: { en, zh }, signal: exec.signal,
-  })
+  }, { policy: 'ask' })
   if (outcome !== 'allowed-once') throw new Error('The operator did not approve this robot action.')
   exec.signal.throwIfAborted()
+}
+
+/** Start the saved revision through the device confirmation and run receipt. */
+export async function startOwnedRobotRun(ctx, args, exec) {
+  const control = ctx.robotControl
+  const session = sessionId(exec)
+  const intent = ctx.get('mossVoiceIntent')?.captureIntent(session)
+  const { robot, analysis } = await control.verifyStart(session, args.experimentId, args.revision)
+  intent?.assertCurrent()
+  await approveRobotAction(ctx, exec,
+    `Run experiment ${args.experimentId} revision ${args.revision} on ${robot.robotType} (${robot.serial})? This includes LabscriptAI automatic recovery for supported minor issues. Confirm the physical deck and stay at the robot.`,
+    `在 ${robot.robotType}（${robot.serial}）运行实验 ${args.experimentId} 的第 ${args.revision} 版？本次运行允许 LabscriptAI 自动处理它支持的小故障。请核对台面并留在设备旁。`)
+  return control.startRun({ ...args, sessionId: session, signal: exec.signal, approved: { ...robot, taskId: analysis.taskId, intent, automaticRecovery: true } })
 }
 
 /** Expose physical robot operations in the experiment assistant preset. */
@@ -40,16 +54,7 @@ export function apply(ctx) {
     description: 'Run the analyzed experiment on the physical robot only when explicitly requested. The workbench requests operator approval for the exact device and protocol revision. The acknowledgement does not establish completion.',
     parameters: { experimentId, revision },
     output,
-    async execute(args, exec) {
-      const session = sessionId(exec)
-      const intent = ctx.get('mossVoiceIntent')?.captureIntent(session)
-      const { robot, analysis } = await control.verifyStart(session, args.experimentId, args.revision)
-      intent?.assertCurrent()
-      await approve(ctx, exec,
-        `Run experiment ${args.experimentId} revision ${args.revision} on ${robot.robotType} (${robot.serial})? Confirm the physical deck and stay at the robot.`,
-        `在 ${robot.robotType}（${robot.serial}）运行实验 ${args.experimentId} 的第 ${args.revision} 版？请核对实体台面并留在设备旁。`)
-      return control.startRun({ ...args, sessionId: session, signal: exec.signal, approved: { ...robot, taskId: analysis.taskId, intent } })
-    },
+    execute: (args, exec) => startOwnedRobotRun(ctx, args, exec),
   })), 'robot-tools.start')
 
   ctx.effect(() => ctx.tools.register(defineTool({
@@ -74,7 +79,7 @@ export function apply(ctx) {
       const intent = args.action === 'stop' ? null : ctx.get('mossVoiceIntent')?.captureIntent(session)
       if (args.action !== 'stop') {
         if (!control.allowLive) throw new Error('Live robot control is disabled.')
-        await approve(ctx, exec, `Confirm ${args.action} for robot run ${args.id}.`,
+        await approveRobotAction(ctx, exec, `Confirm ${args.action} for robot run ${args.id}.`,
           `确认${args.action === 'pause' ? '暂停' : '继续'}真机运行 ${args.id}？`)
       }
       return control.controlRun({ ...args, sessionId: session, signal: exec.signal, approved: args.id, intent })

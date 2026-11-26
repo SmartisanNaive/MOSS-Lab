@@ -11,6 +11,10 @@ const ctx = new Context()
 try {
   await ctx.plugin(LocalSandboxProvider, {}).await()
   const client = createPluginClient({ ...runtime, timeoutMs: 300000, sandbox: ctx.sandbox })
+  const tools = new Set((await client.catalog()).map(tool => tool.name))
+  for (const name of ['robot_status', 'capture_image', 'deck_vision_check', 'runtime_watch', 'safe_next_action']) {
+    assert.ok(tools.has(name), `LabscriptAI did not publish ${name}`)
+  }
   const protocol = await readFile(new URL('../internal/experiment/example_transfer.py', import.meta.url), 'utf8')
   const analysis = await client.analyze(protocol)
   const documents = await client.documents(analysis)

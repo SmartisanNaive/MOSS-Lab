@@ -27,14 +27,14 @@ function setup(t, model, allowLive = true) {
     const ctx = {
       experimentStore: store, effect(fn) { fn() }, provide(_, service) { control = service },
       get(name) {
-        if (name === 'approval') return { async request(request) { state.request = request; return typeof state.approval === 'function' ? state.approval() : state.approval } }
+        if (name === 'approval') return { async request(request, options) { state.request = request; state.approvalPolicy = options?.policy; return typeof state.approval === 'function' ? state.approval() : state.approval } }
         if (name === 'mossVoiceIntent') return { captureIntent() {
           const captured = intent
           return { assertCurrent() { if (intent !== captured) throw new Error('superseded') } }
         } }
       },
       tools: { register(tool) { tools[tool.name] = tool } },
-      labscriptaiRuntime: { async robot(target, name, args, source, beforeDispatch) {
+      labscriptaiRuntime: { async grantRecovery(id) { state.recoveryApproved = id }, async robot(target, name, args, source, beforeDispatch) {
         assert.equal(target.origin, 'http://127.0.0.1:31950')
         assert.equal(args.robot_ip, target.origin)
         if (name === 'control_run' && args.action === 'play') state.beforePlay()
@@ -78,6 +78,8 @@ for (const model of ['Flex', 'OT-2']) {
     f.state.approval = 'rejected'
     await assert.rejects(f.tools.start_robot_run.execute(f.input, f.exec), /did not approve/)
     assert.ok(f.calls.every(call => call.name === 'robot_status'))
+    assert.equal(f.state.recoveryApproved, undefined)
+    assert.equal(f.state.approvalPolicy, 'ask')
     f.state.approval = 'allowed-once'
     const run = await f.tools.start_robot_run.execute(f.input, f.exec)
     assert.match(f.state.request.displayReason.en, new RegExp(model))
@@ -96,6 +98,20 @@ for (const model of ['Flex', 'OT-2']) {
     assert.equal(f.control.activeRun('owner'), null)
   })
 }
+
+test('stopping the run cancels its automatic recovery watcher', async t => {
+  const f = setup(t, 'Flex')
+  const result = await f.tools.start_robot_run.execute(f.input, f.exec)
+  const started = Promise.withResolvers()
+  const watcher = f.control.watchRun(f.input.sessionId, result.runId, f.exec.signal, signal => {
+    started.resolve()
+    return new Promise(resolve => signal.addEventListener('abort', () => resolve(signal.aborted), { once: true }))
+  })
+  await started.promise
+  await assert.rejects(f.control.watchRun(f.input.sessionId, result.runId, f.exec.signal, () => {}), { code: 'ROBOT_WATCH_UNAVAILABLE' })
+  assert.equal((await f.control.controlRun({ sessionId: f.input.sessionId, id: result.id, action: 'stop' })).status, 'action_acknowledged')
+  assert.equal(await watcher, true)
+})
 
 test('mismatched devices and superseded intents do not play a protocol', async t => {
   const f = setup(t, 'Flex')

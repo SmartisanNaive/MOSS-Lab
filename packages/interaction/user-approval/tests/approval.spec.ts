@@ -416,6 +416,17 @@ describe('approval policy (the approval/policy fold)', () => {
     expect(session.snapshotEvents().filter(e => e.type === 'approval/decided')).toHaveLength(1)
   })
 
+  it('can ask for an independently governed device action without changing the session policy', async () => {
+    const ctx = await context()
+    await ctx.plugin(ApprovalService, { policy: 'never' })
+    const { agent } = sessionAgent(ctx, 'sess-device')
+    const consulted = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
+    ctx.on('approval/request', consulted)
+    await expect(ctx.approval.request({ agent, toolName: 'robot' }, { policy: 'ask' })).resolves.toBe('allowed-once')
+    await expect(ctx.approval.request({ agent, toolName: 'bash' })).resolves.toBe('rejected')
+    expect(consulted).toHaveBeenCalledTimes(1)
+  })
+
   it('the gate decides FIRST even against an answerer registered before the service (prepend)', async () => {
     const ctx = await context()
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))

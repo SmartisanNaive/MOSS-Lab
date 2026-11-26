@@ -33,7 +33,7 @@ Answerers are `approval/request` waterfall listeners: return an outcome to answe
 
 ### Setting the policy
 
-The effective policy is the one set for the session, falling back to the configured default. `ask` (the default) delegates to the composed answerers; `never` rejects every request deterministically before interactive dispatch — the strict headless stance for CI and unattended runs.
+The effective policy is the one set for the session, falling back to the configured default. `ask` (the default) delegates to the composed answerers. `never` rejects session-policy requests before interactive dispatch. A trusted host may call `request(req, { policy: 'ask' })` for an operation with its own approval rules, such as physical device control. The request uses the same answerers and audit events and leaves the session policy intact.
 
 ```yaml
 - name: '@deepseek-ai/dsh-session-projection'

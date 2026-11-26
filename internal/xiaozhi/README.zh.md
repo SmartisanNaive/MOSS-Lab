@@ -4,7 +4,7 @@
 
 本地 MOSS 启动配置把此 Cordis 插件与已有网页 Agent 一同挂载。配置 `XIAOZHI_WSS_URL` 时建立一条主动 WSS 连接并提供 MCP 工具；地址是凭据，不写入日志。不配置接入点时仍可使用认证后的本地工作台。连接断开后按有上限的指数退避重连，并用 WebSocket ping/pong 检查链路。重连会重新注册工具，不重发已接受的 Agent 任务；任务回执仍只保存在内存中。
 
-语音委派使用名为**实验助手**的 `moss-experiment` 预设，提供实验角色及实验工具，包括用于追问必要条件的 `request_experiment_input`，不载入通用编程模式、Shell 或仓库工程指令。
+语音委派使用名为**实验助手**的 `moss-experiment` 预设。同一会话中的语音和网页消息共用 LabscriptAI 工具、实验指引和工作台确认。助手可通过 `request_experiment_input` 追问缺失的实验条件。
 
 `moss_delegate(message, newExperiment=false)` 把用户原话交给当前实验会话。补充条件和修改参数复用同一会话；只有明确的新实验才另建。模型不能传入会话 ID。部署者可通过 `sessionId` 指定初始会话；未指定时首条请求使用已有工作区，尚无工作区时使用配置的 `workspacePath` 创建会话。私有 `bindingPath` 文件以原子替换保存当前会话和导航序号。重启后的下一条消息复用该身份；原会话缺失或仍使用旧编程模式时报告错误，不悄悄另建会话；明确开始新实验后采用实验模式，旧对话继续保留。
 

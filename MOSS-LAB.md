@@ -29,7 +29,9 @@ node moss-start.mjs
 
 `.dsh-local/` 保存网页会话、实验数据库、插件安装和产物。升级前停止旧服务并备份此目录与 `.env`；保留已有数据库，不要用空目录覆盖。旧 `labscriptai-ot/.venv` 不再使用，确认没有独立用途后可自行删除。模拟及动画不代表机器人就绪；状态查询不会执行机器人动作。
 
-要在真机运行，在 `.env` 中配置 `OPENTRONS_URL` 和 `MOSS_ALLOW_LIVE_ROBOT=1`。在「实验助手」中分析当前协议后，明确要求运行，再在网页核对设备、实验版本和实体台面并确认。暂停和继续需要网页确认。可以直接停止当前会话的运行。断线后先查询原运行状态，再决定是否继续。
+「实验助手」读取 LabscriptAI 发布的工具和实验指引。在网页打开小智当前的实验会话，即可继续同一个实验。说“看台面”可按需调用插件拍照和识别。若识别缺依赖，可用 `MOSS_VISION_PYTHON` 指向装有插件视觉依赖的 Python。照片通过工作台的通用图片附件显示，取决于当前模型是否支持图片输入。
+
+要在真机运行，在 `.env` 中配置 `OPENTRONS_URL` 和 `MOSS_ALLOW_LIVE_ROBOT=1`。分析当前协议，明确要求运行，再在网页核对设备、实验版本和实体台面。一次确认覆盖本次运行及 LabscriptAI 支持的小故障自动恢复。暂停和继续需要网页确认。可以直接停止当前会话的运行。断线后先查询原运行状态，再决定是否继续。
 
 网页 CI 使用 `MOSS web` 工作流检查构建、类型、实验存储与预览资源，以及网页客户端启动。该工作流不部署网站或操作真实机器人；Windows 安装任务使用受限模型凭据验证已安装程序与两机型本地仿真。
 
@@ -60,7 +62,9 @@ New tasks default to the experiment assistant, which is also available in the mo
 
 `.dsh-local/` stores web sessions, experiments, plugin installations, and artifacts. Stop the old service and back up this directory and `.env` before upgrading; preserve the existing database. The old `labscriptai-ot/.venv` is no longer used; remove it only after checking for independent uses. Simulation and animation do not establish robot readiness; status queries do not move the robot.
 
-For physical operation, set `OPENTRONS_URL` and `MOSS_ALLOW_LIVE_ROBOT=1` in `.env`. Analyze the current protocol in the experiment assistant, explicitly request a live run, then confirm the device, revision, and physical deck in the workbench. Pause and resume require confirmation. Stop is available for a run owned by the current conversation. Read the original run status after a lost connection before sending further actions.
+The experiment assistant discovers the tools and instructions published by LabscriptAI. Open the active Xiaozhi conversation in the workbench to continue its experiment by text. Ask to see the deck to invoke the plugin's camera and recognition on demand. If recognition dependencies are missing, set `MOSS_VISION_PYTHON` to a Python interpreter with the plugin's vision dependencies. The workbench uses its shared image attachment path when the selected model supports image input.
+
+For physical operation, set `OPENTRONS_URL` and `MOSS_ALLOW_LIVE_ROBOT=1` in `.env`. Analyze the current protocol, request a live run, and confirm the device, revision, and physical deck in the workbench. This approval covers the run and LabscriptAI automatic recovery for supported minor faults. Pause and resume require confirmation. Stop is available for a run owned by the current conversation. Read the original run status after a lost connection before sending further actions.
 
 The `MOSS web` workflow checks the build, types, experiment storage and preview resources, and web client boot. It does not deploy the site or operate a physical robot. The Windows installer job uses bounded model credentials to verify the installed workbench and both local robot simulations.
 

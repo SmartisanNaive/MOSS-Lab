@@ -12,7 +12,9 @@
       config:
         root: !!js process.env.MOSS_PLUGIN_ROOT
         data: !!js process.env.MOSS_PLUGIN_DATA
+        state: !!js process.env.MOSS_PLUGIN_STATE
         dependencyHome: !!js process.env.LABSCRIPTAI_HOME
+        visionPython: !!js process.env.MOSS_VISION_PYTHON
         version: !!js process.env.MOSS_PLUGIN_VERSION
         timeoutMs: 300000
     - id: experiment-preview
@@ -67,23 +69,25 @@
         description: 实验方案、三维预览和机器人运行
         order: 4
         plugins:
-          - id: persona
-            name: '@deepseek-ai/dsh-persona'
+          - id: labscriptai-tools
+            name: './internal/experiment/labscriptai-tools.mjs'
             config:
               prefix: >-
                 You are the laboratory experiment assistant. Respond briefly in the user's language.
                 For a simple echo or connectivity test, respond directly.
                 While preparing, accept amendments. Preserve confirmed conditions and the same experiment ID.
                 When essential conditions are missing, call request_experiment_input with one grouped question and wait.
-                Confirm Flex or OT-2 before choosing the protocol API, labware, pipettes, and slot layout.
+                Read the selected robot's LabscriptAI authoring context before choosing equipment or slots.
                 For a follow-up, read the current experiment revision, update it, and analyze the new revision.
                 Create a new experiment only on explicit request or when the session has no experiment yet.
-                Use the experiment tools for local analysis and preview. Physical results require a real run.
-                When explicitly asked to operate a physical robot, use the robot tools and the workbench confirmation.
-                Read get_robot_run for actual results. If the connection drops, read the run before attempting any further operation.
+                Save each draft with the MOSS experiment tools. Analyze its current revision with analyze_experiment for the workbench preview.
+                In LabscriptAI file_path and protocol_path arguments, current_protocol.py refers to the saved experiment in this conversation.
+                Follow the LabscriptAI workflow and read_labscriptai_guidance. Use its tools for device status, on-demand photos, local deck vision, additional checks, and recovery.
+                Only an explicit request for physical operation may trigger the workbench device confirmation. An ambiguous reply is insufficient.
+                To run the saved, analyzed revision, call mcp__labscriptai__run_protocol with file_path current_protocol.py. The workbench confirmation covers supported minor automatic recovery on that run.
+                Watch that run with mcp__labscriptai__runtime_watch after start is acknowledged. Read get_robot_run when the watch finishes to confirm the recorded outcome. Use query_history or get_robot_run for read-only status. After a disconnect use safe_next_action and check the original run before acting.
+                Capture images and run deck vision on request or when LabscriptAI identifies a layout question. Report only checks that ran and observations actually returned.
                 Do not inspect or modify application code or run shell commands.
-              complete: true
-              includeRuntimeContext: false
           - id: robot-tools
             name: './internal/experiment/robot-tools.mjs'
           - id: compaction

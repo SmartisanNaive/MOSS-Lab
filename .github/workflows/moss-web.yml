@@ -70,7 +70,7 @@ jobs:
       - name: Test experiment storage and preview resources
         run: node --import tsx/esm --test internal/experiment/tests/workflow.test.mjs internal/experiment/tests/agent-tools.test.mjs internal/experiment/tests/preview-resources.test.mjs internal/experiment/tests/robot-status-plugin.test.mjs internal/experiment/tests/robot-control.test.mjs internal/xiaozhi/*.test.mjs
       - name: Test plugin lock, recovery and download resources
-        run: node --import tsx/esm --test internal/experiment/tests/plugin-runtime.test.mjs internal/experiment/tests/preview-recovery.test.mjs internal/experiment/tests/install-readiness.test.mjs
+        run: node --import tsx/esm --test internal/experiment/tests/plugin-runtime.test.mjs internal/experiment/tests/preview-recovery.test.mjs internal/experiment/tests/install-readiness.test.mjs internal/experiment/tests/labscriptai-tools.test.mjs
       - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: labscriptai-ot.lock.json

@@ -19,9 +19,10 @@ export function apply(ctx, config) {
     target = { origin: url.origin, authorization }
   }
   const store = ctx.experimentStore
-  const call = (tool, args, protocol, beforeDispatch) => {
+  const pendingWatches = new Map()
+  const call = (tool, args, protocol, beforeDispatch, sessionId) => {
     if (!target) throw new ExperimentError('ROBOT_NOT_CONFIGURED', 'Configure the robot address first.')
-    return ctx.labscriptaiRuntime.robot(target, tool, { ...args, robot_ip: target.origin }, protocol, beforeDispatch)
+    return ctx.labscriptaiRuntime.robot(target, tool, { ...args, ...(sessionId ? { session_id: sessionId } : {}), robot_ip: target.origin }, protocol, beforeDispatch, sessionId)
   }
   function requireLive() {
     if (!config.allowLive) throw new ExperimentError('ROBOT_CONTROL_DISABLED', 'Live robot control is disabled. Set MOSS_ALLOW_LIVE_ROBOT=1 to enable it.')
@@ -42,13 +43,16 @@ export function apply(ctx, config) {
   }
 
   async function status() {
-    const value = await call('robot_status', { include_modules: false })
+    const value = await call('robot_status', { include_modules: true })
     return {
       robotType: value.authoring_context?.robot_type ?? null,
       serial: value.health_summary?.robot_serial ?? null,
       name: value.health_summary?.name ?? null,
       blockers: value.blockers ?? [],
       unchecked: value.not_checked ?? [],
+      authoringContext: value.authoring_context ?? null,
+      deckConfiguration: value.deck_configuration ?? null,
+      modules: value.modules?.modules ?? [],
     }
   }
 
@@ -66,7 +70,7 @@ export function apply(ctx, config) {
     return call('control_run', {
       run_id: row.robot_run_id, action, return_after_action: true, ...identity(row),
       ...(expectedStatus ? { expected_run_status: expectedStatus } : {}),
-    }, undefined, beforeDispatch)
+    }, undefined, beforeDispatch, row.session_id)
   }
 
   async function reconcilePreparedRun(row) {
@@ -131,9 +135,10 @@ export function apply(ctx, config) {
     }
     let physicalId = null
     try {
+      if (approved.automaticRecovery) await ctx.labscriptaiRuntime.grantRecovery(id)
       const result = await call('run_protocol', {
         key: id, auto_play: false, return_after_prepare: true, ...identity(row),
-      }, experiment.snapshot.protocol, beforePrepare)
+      }, experiment.snapshot.protocol, beforePrepare, sessionId)
       physicalId = result.created_run?.data?.id ?? result.created_run?.id
       if (!identifier(physicalId)) throw new ExperimentError('ROBOT_PREPARATION_INVALID', 'OT did not return a usable run ID.')
       store.recordRobotRun(sessionId, id, physicalId)
@@ -168,10 +173,31 @@ export function apply(ctx, config) {
     }
   }
 
+  function activeRunForMcp(sessionId, runId) {
+    const id = target && store.activeRobotRun(sessionId, target.origin)
+    if (!id) throw new ExperimentError('ROBOT_RUN_NOT_FOUND', 'There is no active robot run in this conversation.')
+    const row = run(sessionId, id)
+    if (!row.robot_run_id || row.robot_run_id !== runId) throw new ExperimentError('ROBOT_RUN_NOT_FOUND', 'This run does not belong to the active experiment.')
+    return row
+  }
+
+  async function watchRun(sessionId, runId, signal, watch) {
+    const row = activeRunForMcp(sessionId, runId)
+    if (row.cancel_requested || pendingWatches.has(row.id)) throw new ExperimentError('ROBOT_WATCH_UNAVAILABLE', 'This run is stopping or already has a watcher.')
+    const controller = new AbortController()
+    pendingWatches.set(row.id, controller)
+    try {
+      return await watch(AbortSignal.any([signal, controller.signal]))
+    } finally {
+      pendingWatches.delete(row.id)
+    }
+  }
+
   async function controlRun({ sessionId, id, action, signal, approved, intent }) {
     let row = run(sessionId, id)
     if (action === 'stop') {
       store.requestRobotStop(sessionId, id)
+      pendingWatches.get(id)?.abort()
       row = run(sessionId, id)
       if (row.active && !row.robot_run_id) {
         try { await reconcilePreparedRun(row) } catch { /* Cancellation is already durable. */ }
@@ -202,9 +228,13 @@ export function apply(ctx, config) {
     }
   }
 
-  ctx.effect(() => ctx.provide('robotControl', {
-    configured: target !== null, allowLive: config.allowLive,
-    verifyStart, status, startRun, getRun, controlRun,
-    activeRun: sessionId => target ? store.activeRobotRun(sessionId, target.origin) : null,
-  }), 'robot-control.service')
+  ctx.effect(() => {
+    ctx.provide('robotControl', {
+      configured: target !== null, allowLive: config.allowLive,
+      verifyStart, status, startRun, getRun, controlRun, activeRunForMcp, watchRun,
+      target: () => target,
+      activeRun: sessionId => target ? store.activeRobotRun(sessionId, target.origin) : null,
+    })
+    return () => { for (const watcher of pendingWatches.values()) watcher.abort() }
+  }, 'robot-control.service')
 }
