@@ -36,15 +36,20 @@ export function apply(ctx) {
   }), 'experiment-agent-tools.guidance')
   ctx.tools.register(defineTool({
     name: 'request_experiment_input',
-    description: 'Ask one concise question for essential experiment details, then wait for the operator to answer.',
-    parameters: { question: { type: 'string', required: true, description: 'Question in the operator’s language.' } },
+    description: 'Ask one concise question for essential experiment details, then wait for the operator to answer. When the message came from 小智, also pass voice_question: one short spoken line naming only the missing facts, at most 30 characters, for example 还需要：目标板孔位、每孔体积。',
+    parameters: {
+      question: { type: 'string', required: true, description: 'Question in the operator’s language.' },
+      voice_question: { type: 'string', description: 'Optional spoken one-liner for the voice device: only the missing facts, at most 30 characters.' },
+    },
     output,
     async execute(args, exec) {
       if (!args.question.trim() || Buffer.byteLength(args.question) > 2000) throw new Error('A concise nonempty question is required.')
+      const voice = typeof args.voice_question === 'string' ? args.voice_question.trim() : ''
+      if (voice && [...voice].length > 40) throw new Error('voice_question must be at most 40 characters.')
       const intent = ctx.get('mossVoiceIntent')?.captureIntent(sessionId(exec))
       intent?.assertCurrent()
-      intent?.needsInput(args.question)
-      return { status: 'needs_input', question: args.question }
+      intent?.needsInput(args.question, voice || undefined)
+      return { status: 'needs_input', question: args.question, ...(voice ? { voice_question: voice } : {}) }
     },
   }))
 

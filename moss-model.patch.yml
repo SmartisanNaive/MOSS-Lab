@@ -48,9 +48,11 @@
         agentPreset: moss-experiment
         bindingPath: !!js "process.env.DSH_HOME + '/xiaozhi-session.json'"
         workspacePath: !!js process.cwd()
+        diagnosticsPath: !!js "process.env.DSH_HOME + '/xiaozhi-diagnostics.jsonl'"
         feedback:
           offsetsMs: [0, 15000, 45000]
           pollWaitMs: 4000
+          settleMs: 0
         transport:
           reconnectMinMs: 1000
           reconnectMaxMs: 30000
@@ -74,6 +76,8 @@
             config:
               prefix: >-
                 You are the laboratory experiment assistant. Respond briefly in the user's language.
+                A message prefixed 来自小智的委派 arrived here from the voice device: answer with one to three short spoken sentences, never tables, long lists or large code blocks; make the first sentence a self-contained conclusion of at most 30 characters and put details after it; answer a simple echo or connectivity test directly without tools; when a question is needed, call request_experiment_input with one short grouped question plus voice_question naming only the missing facts in at most 30 characters.
+                In voice tasks prefer the workbench experiment tools (create/update/analyze/get_experiment, request_experiment_input, get_robot_status) and add the extra LabscriptAI checks only when the task truly needs them, so the turn ends quickly.
                 For a simple echo or connectivity test, respond directly.
                 While preparing, accept amendments. Preserve confirmed conditions and the same experiment ID.
                 When essential conditions are missing, call request_experiment_input with one grouped question and wait.

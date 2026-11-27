@@ -18,12 +18,12 @@ const tools = [
   },
   {
     name: 'moss_delegate',
-    description: '把用户原话交给电脑上的当前实验助手。生成中改口也立即提交，最新要求覆盖旧要求。用户回答实验问题时继续同一实验，仅明确另开实验才设 newExperiment=true。返回里的 result 和 question 是给电脑端看的简短提示；只按 speech.speak/text 播报一次，不要复述 result、question、JSON 或工具名。awaitingConfirmation=true 时等待用户回答，再调用本工具；否则继续查询最新任务。',
+    description: '把用户原话交给电脑上的当前实验助手。生成中改口也立即提交，最新要求覆盖旧要求。仅明确另开实验才设 newExperiment=true（也接受 newTask 别名）。严格按返回的 speech.speak/text 播报一次，然后按 speech.next 行动：poll 时继续调用 moss_task_status 观察；end-turn 时朗读后立即结束本轮回复、不再调用任何工具，让设备回到聆听状态；wait 时保持安静继续观察。最多 3 次等待提示。用户提出新要求时先处理这个新要求，不要先回答之前的问题；旧任务的完成结果只在用户明确问进度时朗读。返回里的 result 和 question 是给电脑端看的提示，不要朗读。awaitingConfirmation=true 时朗读问题后结束本轮，等用户回答后再调用本工具。',
     inputSchema: { type: 'object', properties: { newExperiment: { type: 'boolean', description: '仅当用户明确要求另开新实验时为 true，普通补充和修改保持 false。' }, newTask: { type: 'boolean', description: '兼容旧调用方的别名。新调用使用 newExperiment。' }, message: { type: 'string', minLength: 1, maxLength: 8000, description: '用户提出的完整任务和已知实验条件。' } }, required: ['message'], additionalProperties: false },
   },
   {
     name: 'moss_task_status',
-    description: '持续观察 MOSS 任务。只在 speech.speak=true 时朗读 speech.text 一次，否则保持安静；不要朗读 result、question 或任何长列表，也不要复述电脑上的完整内容，一两次短句即可。遇 followJobId 改查最新任务。awaitingConfirmation=true 时停止自动查询并等待用户回答，再调用 moss_delegate。completed/error 后停止自动查询。仅用户主动问进度时设 userQuery=true。',
+    description: '持续观察 MOSS 任务。只在 speech.speak=true 时朗读 speech.text 一次；先看 speech.next：poll 时继续调用本工具，end-turn 时朗读后立即结束本轮回复让设备聆听，wait 时保持安静继续查询，不要因为暂时没有播报就停止。遇 followJobId 改查最新任务；用户改口立即改调 moss_delegate。completed/error 后只说指定短句，不读 result、question、JSON 或复述方案。仅用户主动问进度时设 userQuery=true。',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string', minLength: 1, maxLength: 128 }, userQuery: { type: 'boolean', description: '只有用户明确询问当前进度才为true，自动观察必须false。' } }, required: ['jobId'], additionalProperties: false },
   },
 ]
@@ -86,7 +86,13 @@ export async function handleMessage(message, store, sessionId, delegation, conte
     try {
       if (submitting) {
         const accepted = await delegation.submit(args.message, { newExperiment: args.newExperiment ?? args.newTask ?? false, source: 'xiaozhi' })
-        return response(id, text(delegation.voiceReceipt ? { ...accepted, ...delegation.voiceReceipt(accepted.jobId) } : accepted))
+        const receipt = delegation.voiceReceipt ? { ...accepted, ...delegation.voiceReceipt(accepted.jobId) } : accepted
+        let settled = null
+        if (typeof delegation.voiceSettle === 'function') {
+          settled = await delegation.voiceSettle(accepted.jobId, { signal: context.signal })
+        }
+        const finished = settled !== null && !['running', 'timeout'].includes(settled.status)
+        return response(id, text(finished ? { ...receipt, ...settled } : receipt))
       }
       return response(id, text(delegation.voiceStatus ? await delegation.voiceStatus(args.jobId, { userQuery: args.userQuery ?? false, signal: context.signal }) : delegation.get(args.jobId)))
     } catch (error) {
@@ -122,7 +128,7 @@ export function connectBridge({ url, sessionId, store, delegation, liveControl =
   let socket, retryTimer, heartbeatTimer
   let attempts = 0
   let disposed = false
-  let state = { status: 'connecting', reconnects: 0, registered: false, lastCall: null, updatedAt: Date.now() }
+  let state = { status: 'connecting', reconnects: 0, registered: false, lastCall: null, clientInfo: null, updatedAt: Date.now() }
   const pending = new Set()
   const snapshot = () => ({ ...state, lastCall: state.lastCall === null ? null : { ...state.lastCall } })
   const notify = (status, extra = {}) => {
@@ -167,6 +173,12 @@ export function connectBridge({ url, sessionId, store, delegation, liveControl =
           if (message && message.method === undefined && (Object.hasOwn(message, 'result') || Object.hasOwn(message, 'error'))) return
           if (message?.id !== undefined && requests.has(JSON.stringify(message.id))) return
           if (message?.id !== undefined) requests.set(JSON.stringify(message.id), controller)
+          if (message?.method === 'initialize') notify(state.status, { clientInfo: {
+            name: typeof message.params?.clientInfo?.name === 'string' ? message.params.clientInfo.name : null,
+            version: typeof message.params?.clientInfo?.version === 'string' ? message.params.clientInfo.version : null,
+            protocolVersion: typeof message.params?.protocolVersion === 'string' ? message.params.protocolVersion : null,
+            capabilities: message.params?.capabilities && typeof message.params.capabilities === 'object' ? Object.keys(message.params.capabilities) : [],
+          } })
           if (message !== undefined) {
             const name = message.method === 'tools/call' && tools.some(tool => tool.name === message.params?.name) ? message.params.name : null
             const receivedAt = Date.now()
@@ -216,3 +228,4 @@ export function connectBridge({ url, sessionId, store, delegation, liveControl =
   dispose.snapshot = snapshot
   return dispose
 }
+

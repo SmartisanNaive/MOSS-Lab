@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createDelegation } from './delegation.mjs'
-import { createVoiceFeedback } from './voice-feedback.mjs'
+import { createVoiceFeedback, spokenReply } from './voice-feedback.mjs'
 import { handleMessage } from './bridge.mjs'
 
 function fixture() {
@@ -78,11 +78,16 @@ test('three wait hints cover the whole amendment cycle; automatic completion is 
   const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 1, now: () => now })
   try {
     const first = await f.delegation.submit('3 repeats'); f.claim(0)
-    assert.equal(feedback.receipt(first.jobId).speech.waitingCount, 1)
+    const receipt = feedback.receipt(first.jobId)
+    assert.equal(receipt.speech.waitingCount, 1)
+    assert.equal(receipt.speech.next, 'poll')
     now = 14
     assert.equal((await feedback.status(first.jobId)).speech.speak, false)
     now = 15
-    assert.equal((await feedback.status(first.jobId)).speech.waitingCount, 2)
+    const waiting = await feedback.status(first.jobId)
+    assert.equal(waiting.speech.waitingCount, 2)
+    assert.equal(waiting.speech.next, 'end-turn')
+    assert.match(waiting.speech.instruction, /结束本轮/)
     const latest = await f.delegation.submit('4 repeats'); f.claim(1)
     assert.equal(feedback.receipt(latest.jobId).speech.speak, false)
     now = 45
@@ -96,9 +101,10 @@ test('three wait hints cover the whole amendment cycle; automatic completion is 
     f.delegation.captureIntent(latest.sessionId).previewReady({ id: 'e', revision: 4 })
     f.end(1, 'a very long assistant explanation')
     const completed = await feedback.status(latest.jobId)
-    assert.equal(completed.speech.text, '预览已更新，请看电脑。')
+    assert.equal(completed.speech.text, 'a very long assistant explanation')
     assert.equal(completed.result, completed.speech.text)
     assert.equal(completed.speech.speak, true)
+    assert.equal(completed.speech.next, 'end-turn')
     assert.equal((await feedback.status(latest.jobId)).speech.speak, false)
     const next = await f.delegation.submit('another task')
     assert.equal(feedback.receipt(next.jobId).speech.waitingCount, 1)
@@ -117,6 +123,56 @@ test('explicit progress questions are answered without resetting the automatic s
     assert.equal(answer.speech.speak, true)
     assert.equal(answer.speech.waitingCount, 1)
     assert.equal(answer.speech.reason, 'user_query')
+  } finally { feedback.close(); f.delegation.close() }
+})
+
+test('spoken replies carry the answer itself, stripped of report formatting', () => {
+  assert.equal(spokenReply('确认了：磁力架在 C3，但台面配置缺 C3 落点。细节见下。'), '确认了：磁力架在 C3，但台面配置缺 C3 落点。详情看电脑。')
+  assert.equal(spokenReply('## 标题\n\n- **第一点**：成功\n- 第二点：失败\n'), '标题 第一点：成功 第二点：失败')
+  assert.equal(spokenReply('第一句。第二句不应朗读。'), '第一句。详情看电脑。')
+  assert.equal(spokenReply('| a | b |\n|---|---|\n| 1 | 2 |\n\n移动完成。'), '移动完成。')
+  assert.equal(spokenReply('```\ncode only\n```'), '')
+  assert.equal(spokenReply(''), '')
+  const long = spokenReply('第一句说明这次搬运没有发生，因为台面配置缺少 C3 的落点区域，需要在触屏重新设置一次磁力架并保存。第二句补充很多细节。')
+  assert.ok(long.length <= 120)
+  assert.match(long, /详情看电脑/)
+})
+
+test('one delegate call can already return the finished answer', async () => {
+  const f = fixture()
+  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 1, settleMs: 40 })
+  const delegation = { ...f.delegation, voiceReceipt: feedback.receipt, voiceStatus: feedback.status,
+    voiceSettle: (id, options) => feedback.settle(id, options) }
+  const call = name => handleMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { message: '帮我把 C2 的板子搬到 C3' } } }, {}, null, delegation)
+  try {
+    const pending = call('moss_delegate')
+    await new Promise(resolve => setImmediate(resolve))
+    f.claim(0)
+    f.end(0, '确认了：磁力架在 C3，但台面配置缺少 C3 落点，板子没有移动。')
+    const answer = JSON.parse((await pending).result.content[0].text)
+    assert.equal(answer.status, 'completed')
+    assert.equal(answer.speech.speak, true)
+    assert.equal(answer.speech.text, '确认了：磁力架在 C3，但台面配置缺少 C3 落点，板子没有移动。')
+  } finally { feedback.close(); f.delegation.close() }
+})
+
+test('a new request never replays the previous answer, but an explicit progress query still reports it', async () => {
+  const f = fixture()
+  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 1, settleMs: 0 })
+  const delegation = { ...f.delegation, voiceReceipt: feedback.receipt, voiceStatus: feedback.status,
+    voiceSettle: (id, options) => feedback.settle(id, options) }
+  const call = (id, message) => handleMessage({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'moss_delegate', arguments: { message } } }, {}, null, delegation)
+  const status = id => handleMessage({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'moss_task_status', arguments: { jobId: id } } }, {}, null, delegation)
+  try {
+    const first = JSON.parse((await call(1, '设计一个实验')).result.content[0].text)
+    f.claim(0)
+    f.end(0, '第一件事已经完成：协议已通过本地模拟。')
+    const second = JSON.parse((await call(2, '再改一下体积')).result.content[0].text)
+    assert.equal(second.previousSpeech, undefined)
+    assert.equal(second.speech.speak, true)
+    const old = JSON.parse((await status(first.jobId)).result.content[0].text)
+    assert.equal(old.speech.text, '第一件事已经完成：协议已通过本地模拟。')
+    assert.equal(old.speech.next, 'end-turn')
   } finally { feedback.close(); f.delegation.close() }
 })
 
@@ -154,6 +210,7 @@ test('a clarification focuses once and finishes as needs_input rather than a pre
     assert.equal(heard.status, 'running')
     assert.equal(heard.awaitingConfirmation, true)
     assert.equal(heard.speech.text, '每孔最终体积是多少？')
+    assert.equal(heard.speech.next, 'end-turn')
     assert.equal(heard.speech.waitingCount, 1)
     assert.equal(silent.speech.speak, false)
     f.delegation.captureIntent(accepted.sessionId).needsInput('每孔最终体积是多少？')
@@ -179,6 +236,20 @@ test('a long clarification is condensed before it is spoken', async () => {
     assert.equal(heard.question, heard.speech.text)
     assert.match(heard.speech.instruction, /不要朗读/)
     assert.equal(heard.speech.speak, true)
+  } finally { feedback.close(); f.delegation.close() }
+})
+
+test('the workbench voice question names only the missing facts', async () => {
+  const f = fixture()
+  const feedback = createVoiceFeedback({ delegation: f.delegation, offsetsMs: [0, 15, 45], pollWaitMs: 10000 })
+  try {
+    const accepted = await f.delegation.submit('missing conditions'); f.claim(0)
+    const long = '请提供这个新实验的必要信息：机器型号是 Flex 还是 OT-2，源板、目标板、枪头盒放哪个槽位，源液是什么，每孔转移多少微升。'
+    f.delegation.captureIntent(accepted.sessionId).needsInput(long, '还需要：目标板孔位、每孔体积')
+    const heard = await feedback.status(accepted.jobId)
+    assert.equal(heard.speech.text, '还需要：目标板孔位、每孔体积')
+    assert.equal(heard.question, '还需要：目标板孔位、每孔体积')
+    assert.equal(heard.speech.next, 'end-turn')
   } finally { feedback.close(); f.delegation.close() }
 })
 
@@ -278,3 +349,5 @@ test('an already captured voice publication can finish after its final reply was
     assert.deepEqual(f.delegation.get(accepted.jobId).preview, { id: 'e', revision: 3 })
   } finally { f.delegation.close() }
 })
+
+

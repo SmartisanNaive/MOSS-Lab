@@ -37,7 +37,7 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
   }
   const changed = () => { for (const listener of subscribers) { try { listener() } catch { console.warn('xiaozhi task observer failed') } } }
   const focus = reason => { focusSequence = Math.max(focusSequence + 1, Date.now()); focusReason = reason }
-  const publicJob = job => ({ jobId: job.jobId, sessionId: job.sessionId, status: job.status, result: job.result, cycleId: job.cycleId, phase: job.phase, question: job.question, preview: job.preview, supersededBy: job.supersededBy, ...(job.followJobId ? { followJobId: job.followJobId } : {}) })
+  const publicJob = job => ({ jobId: job.jobId, sessionId: job.sessionId, status: job.status, result: job.result, cycleId: job.cycleId, phase: job.phase, question: job.question, voiceQuestion: job.voiceQuestion ?? null, preview: job.preview, supersededBy: job.supersededBy, ...(job.followJobId ? { followJobId: job.followJobId } : {}) })
 
   async function admit(message, { newExperiment, source, replyTo }) {
     if (closed) throw new Error('委派服务已关闭')
@@ -164,10 +164,11 @@ export function createDelegation({ controller, workspaces, events, timeoutMs = 3
       }
       return {
         assertCurrent,
-        needsInput: question => publish('needs_input', { question }),
+        needsInput: (question, voiceQuestion) => publish('needs_input', { question, ...(typeof voiceQuestion === 'string' && voiceQuestion.trim() ? { voiceQuestion: voiceQuestion.trim() } : {}) }),
         previewReady: ({ id, revision }) => publish('preview_ready', { preview: { id, revision } }),
       }
     },
     close() { closed = true; for (const job of jobs.values()) if (active(job)) job.cancelObservation?.(); subscribers.clear() },
   }
 }
+

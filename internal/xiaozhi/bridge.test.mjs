@@ -32,6 +32,17 @@ test('tool calls are restricted to an operator-selected session and omit snapsho
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('the voice tool contract releases the device to listen after an end-turn decision', async () => {
+  const store = { getForSession() {}, getChecksForSession() {} }
+  const listing = await handleMessage(request(1, 'tools/list'), store, 'owner')
+  const byName = new Map(listing.result.tools.map(tool => [tool.name, tool.description]))
+  assert.match(byName.get('moss_delegate'), /speech\.next/)
+  assert.match(byName.get('moss_delegate'), /end-turn/)
+  assert.match(byName.get('moss_delegate'), /最多 3 次等待提示/)
+  assert.match(byName.get('moss_task_status'), /end-turn/)
+  assert.match(byName.get('moss_task_status'), /让设备聆听/)
+})
+
 test('reports live-control modes without exposing the robot address', async () => {
   const store = { getForSession() {}, getChecksForSession() {} }
   const delegation = { submit() {} }
@@ -64,9 +75,10 @@ test('outbound socket sends only replies and is closed on disposal', async () =>
   const dispose = connectBridge({ url: 'wss://example.invalid/path?token=private', sessionId: 'owner', store, WebSocketClass: FakeSocket })
   const socket = FakeSocket.last
   assert.equal(socket.sent.length, 0)
-  socket.deliver(JSON.stringify(request(1, 'initialize', { protocolVersion: '2024-11-05' })))
+  socket.deliver(JSON.stringify(request(1, 'initialize', { protocolVersion: '2024-11-05', clientInfo: { name: 'xz-mcp-broker', version: '0.0.1' }, capabilities: { sampling: {} } })))
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(socket.sent[0].result.protocolVersion, '2024-11-05')
+  assert.deepEqual(dispose.snapshot().clientInfo, { name: 'xz-mcp-broker', version: '0.0.1', protocolVersion: '2024-11-05', capabilities: ['sampling'] })
   socket.deliver('{')
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(socket.sent[1].error.code, -32700)

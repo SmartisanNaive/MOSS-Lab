@@ -42,18 +42,18 @@ export function apply(ctx, config) {
       } })
     const feedback = createVoiceFeedback({ delegation, ...config.feedback })
     ctx.provide('mossVoiceIntent', delegation)
-    let seenFocus = 0
-    const reportWake = state => { if (state.status === 'error') console.warn('xiaozhi workbench window:', state.reason) }
-    const stopChanges = delegation.subscribe(() => {
-      const current = delegation.workbench()
-      if (current.focusSequence > seenFocus) { seenFocus = current.focusSequence; void wakeup.wake().then(reportWake) }
-    })
     let disconnect, unregister
     const record = value => {
       if (!config.diagnosticsPath) return
       try { appendFileSync(config.diagnosticsPath, JSON.stringify(value) + '\n', { mode: 0o600 }) }
       catch { console.warn('xiaozhi diagnostics could not be saved') }
     }
+    let seenFocus = 0
+    const reportWake = state => { if (state.status === 'error') console.warn('xiaozhi workbench window:', state.reason) }
+    const stopChanges = delegation.subscribe(() => {
+      const current = delegation.workbench()
+      if (current.focusSequence > seenFocus) { seenFocus = current.focusSequence; void wakeup.wake().then(reportWake) }
+    })
     const recordSpeech = result => { record({ kind: 'speech_decision', jobId: result.jobId, cycleId: result.cycleId, phase: result.phase, speak: result.speech.speak, reason: result.speech.reason, waitingCount: result.speech.waitingCount, at: Date.now() }); return result }
     const workbench = {
       ...delegation,
@@ -64,6 +64,7 @@ export function apply(ctx, config) {
       },
       voiceReceipt: id => recordSpeech(feedback.receipt(id)),
       voiceStatus: async (id, options) => recordSpeech(await feedback.status(id, options)),
+      voiceSettle: async (id, options) => recordSpeech(await feedback.settle(id, options)),
       workbench() {
         return { ...delegation.workbench(), connection: disconnect?.snapshot() ?? { status: 'not_configured', registered: false, reconnects: 0, lastCall: null }, wakeup: wakeup.state(), speechPolicy: feedback.snapshot() }
       },
@@ -88,3 +89,4 @@ export function apply(ctx, config) {
     return async () => { stopChanges(); feedback.close(); delegation.close(); const stoppedWake = wakeup.close(); await unregister?.(); await disconnect?.(); await stoppedWake }
   }, 'xiaozhi-readonly.connection')
 }
+
