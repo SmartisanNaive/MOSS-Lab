@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
 import { boundedResponse, ensurePluginRuntime, extractPlugin, validateLock } from '../../../scripts/labscriptai-runtime.mjs'
 import { findPluginUpdate } from '../../../scripts/update-labscriptai.mjs'
-import { readPluginDocuments, readPluginFile } from '../plugin-client.mjs'
+import { photoMarkdownLine, readPluginDocuments, readPluginFile } from '../plugin-client.mjs'
 
 const revision = 'a'.repeat(40)
 const checksum = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -132,4 +132,13 @@ test('artifact manifests reject incompatible APIs, mixed analyses and tampered b
     assert.equal(error.details.setupMessage.length, 2000)
     return true
   })
+})
+
+
+test('photo markdown points the chat at the saved host path', () => {
+  assert.equal(photoMarkdownLine('台面照片', 'C:\\data\\deck.jpg'), '![台面照片](<C:/data/deck.jpg>)')
+  assert.equal(photoMarkdownLine('台面照片', '/tmp/my deck.png'), '![台面照片](</tmp/my deck.png>)')
+  assert.equal(photoMarkdownLine('台面照片', ''), undefined)
+  assert.equal(photoMarkdownLine('台面照片', '/tmp/a<b>.png'), undefined)
+  assert.equal(photoMarkdownLine('a[1]', '/tmp/a.png'), undefined)
 })

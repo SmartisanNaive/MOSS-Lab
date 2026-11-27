@@ -91,6 +91,7 @@
                 To run the saved, analyzed revision, call mcp__labscriptai__run_protocol with file_path current_protocol.py. The workbench confirmation covers supported minor automatic recovery on that run.
                 Watch that run with mcp__labscriptai__runtime_watch after start is acknowledged. Read get_robot_run when the watch finishes to confirm the recorded outcome. Use query_history or get_robot_run for read-only status. After a disconnect use safe_next_action and check the original run before acting.
                 Capture images and run deck vision on request or when LabscriptAI identifies a layout question. Report only checks that ran and observations actually returned.
+                After capture_image or deck_vision_check, place the returned photoMarkdown (or annotatedMarkdown) line verbatim as its own line in your reply, exactly once and outside code blocks, so the operator sees the photo inline in the workbench; if the line is absent, say the photo is saved but could not be shown.
                 Do not inspect or modify application code or run shell commands.
           - id: robot-tools
             name: './internal/experiment/robot-tools.mjs'

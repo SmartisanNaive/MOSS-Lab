@@ -68,13 +68,27 @@ async function prepareExperimentArguments(workspace, directory, name, args, prot
   return input
 }
 
+/**
+ * One Markdown image line the chat rewrites through its authenticated file
+ * route. The client maps an absolute destination to `api/file?path=…`, so the
+ * reply only needs the host path; the angle-bracket form keeps spaces literal.
+ * @param {string} alt Image alt text.
+ * @param {unknown} path Absolute image path on the host.
+ * @returns {string|undefined} Markdown line, or undefined for an unusable path.
+ */
+export function photoMarkdownLine(alt, path) {
+  if (typeof alt !== 'string' || alt === '' || /[\\[\]]/u.test(alt)) return undefined
+  if (typeof path !== 'string' || path === '' || /[<>\r\n]/u.test(path)) return undefined
+  return `![${alt}](<${path.replaceAll('\\', '/')}>)`
+}
+
 async function photoResult(workspace, response) {
   const json = response.content.find(item => item.type === 'text')?.text
   if (!json || response.isError) return response
   const envelope = JSON.parse(json)
   if (envelope.success !== true) return response
   const data = envelope.data
-  const content = [...response.content]
+  const content = response.content.filter(item => item.type !== 'text')
   for (const path of new Set([data?.saved_to, data?.image_path, data?.annotated_image_path, data?.yolo?.annotated_image_path])) {
     if (typeof path !== 'string') continue
     const bytes = await readPluginFile(workspace, path, 12 * 1024 * 1024)
@@ -83,7 +97,16 @@ async function photoResult(workspace, response) {
     if (!mimeType) throw new ExperimentError('PLUGIN_RESPONSE_INVALID', 'LabscriptAI returned an unsupported photo format.')
     content.push({ type: 'image', data: bytes.toString('base64'), mimeType })
   }
-  return { ...response, content }
+  // The operator sees the photo in the workbench only through this Markdown line;
+  // the raw image block is unreadable to a text-only model.
+  const photo = photoMarkdownLine('台面照片', data?.saved_to ?? data?.image_path)
+  const annotated = photoMarkdownLine('台面识别标注图', data?.annotated_image_path ?? data?.yolo?.annotated_image_path)
+  const enriched = { ...envelope, data: {
+    ...data,
+    ...(photo === undefined ? {} : { photoMarkdown: photo }),
+    ...(annotated === undefined ? {} : { annotatedMarkdown: annotated }),
+  } }
+  return { ...response, content: [{ type: 'text', text: JSON.stringify(enriched) }, ...content] }
 }
 
 /** Create a confined MCP client for simulation, documents and configured robot operations.
