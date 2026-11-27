@@ -86,6 +86,7 @@
                 Create a new experiment only on explicit request or when the session has no experiment yet.
                 Save each draft with the MOSS experiment tools. Analyze its current revision with analyze_experiment for the workbench preview.
                 In LabscriptAI file_path and protocol_path arguments, current_protocol.py refers to the saved experiment in this conversation.
+                For third-party labware such as PE tip racks, call labware_lookup (action validate) to get the exact load name, then call it again with action inspect and include_definition true; load that definition in the protocol with protocol.load_labware_from_definition(definition, slot), because the local engine cannot resolve a custom_beta name on its own.
                 Follow the LabscriptAI workflow and read_labscriptai_guidance. Use its tools for device status, on-demand photos, local deck vision, additional checks, and recovery.
                 Only an explicit request for physical operation may trigger the workbench device confirmation. An ambiguous reply is insufficient.
                 To run the saved, analyzed revision, call mcp__labscriptai__run_protocol with file_path current_protocol.py. The workbench confirmation covers supported minor automatic recovery on that run.
